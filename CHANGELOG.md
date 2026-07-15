@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.6.0...v0.7.0) (2026-07-15)
+
+
+### Features
+
+* duplicate the root message into its thread immediately ([7cd57a3](https://github.com/next-gen-infrastructure/alerting-relay/commit/7cd57a31c2d9fbec31c63ae34dcb765749aefcb7))
+* group alert instances by status and add default oncall team ([a222f33](https://github.com/next-gen-infrastructure/alerting-relay/commit/a222f33719837a14408f6390c22bc1e18fe92609))
+
 ## [0.6.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.5.0...v0.6.0) (2026-07-15)
 
 
