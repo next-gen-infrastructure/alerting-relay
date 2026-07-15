@@ -17,6 +17,7 @@ func main() {
 		os.Exit(1)
 	}
 	client := slack.New(token)
+	grafanaURL := "https://grafana.example.com"
 
 	base := webhook.Payload{
 		Receiver: "development-backend-services",
@@ -27,7 +28,9 @@ func main() {
 			"namespace": "default",
 		},
 		CommonAnnotations: map[string]string{
-			"summary": "Testing per-instance firing/resolved color coding",
+			"summary":       "Testing per-instance firing/resolved color coding",
+			"runbook_url":   "https://runbooks.example.com/alert-color-code-smoke-test",
+			"dashboard_url": "https://grafana.example.com/d/fake-dashboard",
 		},
 	}
 
@@ -37,7 +40,7 @@ func main() {
 	step1.Alerts = []webhook.Alert{
 		{Status: "firing", Annotations: map[string]string{"description": "instance-1 down"}},
 	}
-	ts, err := client.PostRoot(channel, slack.BuildAttachment(step1, ""))
+	ts, err := client.PostRoot(channel, slack.BuildAttachment(step1, grafanaURL))
 	if err != nil {
 		fmt.Println("post root error:", err)
 		return
@@ -52,7 +55,7 @@ func main() {
 		{Status: "firing", Annotations: map[string]string{"description": "instance-1 down"}},
 		{Status: "firing", Annotations: map[string]string{"description": "instance-2 down"}},
 	}
-	if err := client.PostThreadReply(channel, ts, slack.BuildAttachment(step2, "")); err != nil {
+	if err := client.PostThreadReply(channel, ts, slack.BuildAttachment(step2, grafanaURL)); err != nil {
 		fmt.Println("thread reply error:", err)
 		return
 	}
@@ -66,7 +69,7 @@ func main() {
 		{Status: "resolved", Annotations: map[string]string{"description": "instance-1 down"}},
 		{Status: "firing", Annotations: map[string]string{"description": "instance-2 down"}},
 	}
-	if err := client.PostThreadReply(channel, ts, slack.BuildAttachment(step3, "")); err != nil {
+	if err := client.PostThreadReply(channel, ts, slack.BuildAttachment(step3, grafanaURL)); err != nil {
 		fmt.Println("thread reply error:", err)
 		return
 	}
@@ -80,7 +83,7 @@ func main() {
 		{Status: "resolved", Annotations: map[string]string{"description": "instance-1 down"}},
 		{Status: "resolved", Annotations: map[string]string{"description": "instance-2 down"}},
 	}
-	attachment := slack.BuildAttachment(step4, "")
+	attachment := slack.BuildAttachment(step4, grafanaURL)
 	if err := client.UpdateRoot(channel, ts, attachment); err != nil {
 		fmt.Println("update root error:", err)
 		return
