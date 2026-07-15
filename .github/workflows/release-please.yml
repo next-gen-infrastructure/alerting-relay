@@ -4,25 +4,25 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: write
-  pull-requests: write
-  actions: write
+env:
+  APP_ID: 2625515 # nextgen-release-please
 
 jobs:
   release-please:
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@v5
-        id: release
-
-      # release-please creates the release/tag via GITHUB_TOKEN, which GitHub
-      # excludes from triggering other workflows' `push: tags` events — so
-      # dispatch the publish workflows explicitly for the new tag instead.
-      - name: Trigger publish workflows
-        if: ${{ steps.release.outputs.release_created }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh workflow run docker-publish.yml --ref "${{ steps.release.outputs.tag_name }}"
-          gh workflow run helm-publish.yml --ref "${{ steps.release.outputs.tag_name }}"
+      - id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ env.APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_PRIVATE_KEY }}
+      - id: release
+        uses: googleapis/release-please-action@v5
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
