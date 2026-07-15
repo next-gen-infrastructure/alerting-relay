@@ -40,13 +40,22 @@ func main() {
 	step1.Alerts = []webhook.Alert{
 		{Status: "firing", Annotations: map[string]string{"description": "instance-1 down"}},
 	}
-	ts, err := client.PostRoot(channel, slack.BuildAttachment(step1, grafanaURL))
+	rootAttachment := slack.BuildAttachment(step1, grafanaURL)
+	ts, err := client.PostRoot(channel, rootAttachment)
 	if err != nil {
 		fmt.Println("post root error:", err)
 		return
 	}
 	fmt.Println("posted root ts:", ts)
-	time.Sleep(5 * time.Second)
+
+	// duplicate the root into its own thread immediately, so it stays
+	// visible even after the root gets edited on resolution
+	if err := client.PostThreadReply(channel, ts, rootAttachment); err != nil {
+		fmt.Println("original repost error:", err)
+		return
+	}
+	fmt.Println("duplicated root into thread")
+	time.Sleep(10 * time.Second)
 
 	// 2 instances down
 	step2 := base
@@ -60,7 +69,7 @@ func main() {
 		return
 	}
 	fmt.Println("posted thread reply: 2 firing")
-	time.Sleep(5 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	// first recovered, second still down
 	step3 := base
@@ -74,7 +83,7 @@ func main() {
 		return
 	}
 	fmt.Println("posted thread reply: 1 firing, 1 resolved")
-	time.Sleep(5 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	// all instances recovered
 	step4 := base

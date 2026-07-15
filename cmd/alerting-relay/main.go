@@ -166,6 +166,12 @@ func (rl *relay) handleGroup(payload webhook.Payload) error {
 		if err != nil {
 			return err
 		}
+		// Root only ever gets edited once (on resolution below), which would
+		// otherwise erase the original firing content it started with. Post
+		// a copy into the thread right away so it stays visible either way.
+		if err := rl.slack.PostThreadReply(channel, ts, attachment); err != nil {
+			return err
+		}
 		return rl.store.Create(store.AlertGroup{
 			Receiver:  payload.Receiver,
 			GroupKey:  payload.GroupKey,
