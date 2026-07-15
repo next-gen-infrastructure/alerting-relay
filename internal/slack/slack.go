@@ -105,18 +105,21 @@ func BuildAttachment(payload webhook.Payload, grafanaURL string) slackapi.Attach
 		))
 	}
 
-	if details := alertDetails(payload.Alerts); len(details) > 0 {
-		blocks = append(blocks, slackapi.NewSectionBlock(
-			slackapi.NewTextBlockObject(slackapi.MarkdownType, strings.Join(details, "\n"), false, false), nil, nil,
-		))
-	}
-
 	if firing {
 		silence := silenceURL(grafanaURL, labels)
 		if elements := actionElements(ann, silence); len(elements) > 0 {
 			blocks = append(blocks, slackapi.NewDividerBlock())
 			blocks = append(blocks, slackapi.NewActionBlock("", elements...))
 		}
+	}
+
+	// Instance details go last: Slack auto-collapses long attachments behind
+	// a "Show more" link, so pushing the (often long) per-instance list to
+	// the bottom keeps the header/summary/actions visible without expanding.
+	if details := alertDetails(payload.Alerts); details != "" {
+		blocks = append(blocks, slackapi.NewSectionBlock(
+			slackapi.NewTextBlockObject(slackapi.MarkdownType, details, false, false), nil, nil,
+		))
 	}
 
 	return slackapi.Attachment{Color: color, Blocks: slackapi.Blocks{BlockSet: blocks}}
@@ -143,9 +146,11 @@ func metadataFields(labels map[string]string) []*slackapi.TextBlockObject {
 	}
 	add("Namespace", labels["namespace"])
 	add("Instance", labels["instance"])
-	if team := labels["team"]; team != "" {
-		add("Team", "@"+team)
+	team := labels["team"]
+	if team == "" {
+		team = "team-devops-oncall"
 	}
+	add("Team", "@"+team)
 	return fields
 }
 
@@ -162,21 +167,48 @@ func alertCounts(alerts []webhook.Alert) (firing, resolved int) {
 	return firing, resolved
 }
 
-// alertDetails collects each alert's description/message, de-duplicated and
-// sorted so re-renders (thread replies) are stable/diffable.
-func alertDetails(alerts []webhook.Alert) []string {
+// alertDetails collects each alert's description/message, de-duplicated per
+// status and sorted so re-renders (thread replies) are stable/diffable.
+// Firing and resolved instances are grouped under their own bold subheading
+// (Slack Block Kit text has no per-line color) instead of an inline marker,
+// firing first since those need attention; entries with no status (e.g.
+// incomplete test data) are listed under neither, ungrouped.
+func alertDetails(alerts []webhook.Alert) string {
+	firing := dedupAnnotations(alerts, "firing")
+	resolved := dedupAnnotations(alerts, "resolved")
+	other := dedupAnnotations(alerts, "")
+
+	var sections []string
+	if len(firing) > 0 {
+		sections = append(sections, fmt.Sprintf("*Firing (%d)*\n%s", len(firing), strings.Join(firing, "\n")))
+	}
+	if len(resolved) > 0 {
+		sections = append(sections, fmt.Sprintf("*Resolved (%d)*\n%s", len(resolved), strings.Join(resolved, "\n")))
+	}
+	if len(other) > 0 {
+		sections = append(sections, strings.Join(other, "\n"))
+	}
+	return strings.Join(sections, "\n\n")
+}
+
+// dedupAnnotations collects description/message annotations from alerts
+// matching status, de-duplicated and sorted.
+func dedupAnnotations(alerts []webhook.Alert, status string) []string {
 	seen := map[string]bool{}
-	var details []string
+	var out []string
 	for _, a := range alerts {
+		if a.Status != status {
+			continue
+		}
 		for _, key := range []string{"description", "message"} {
 			if v := a.Annotations[key]; v != "" && !seen[v] {
 				seen[v] = true
-				details = append(details, v)
+				out = append(out, v)
 			}
 		}
 	}
-	sort.Strings(details)
-	return details
+	sort.Strings(out)
+	return out
 }
 
 // actionElements builds the runbook/silence/dashboard buttons. runbook_url and

@@ -81,6 +81,18 @@ func TestBuildAttachmentResolvedHasNoActionsAndGoodColor(t *testing.T) {
 	}
 }
 
+func TestMetadataFieldsDefaultsTeamToOncall(t *testing.T) {
+	fields := metadataFields(map[string]string{})
+	if len(fields) != 1 || fields[0].Text != "*Team*\n@team-devops-oncall" {
+		t.Fatalf("expected default oncall team field, got %#v", fields)
+	}
+
+	fields = metadataFields(map[string]string{"team": "platform"})
+	if len(fields) != 1 || fields[0].Text != "*Team*\n@platform" {
+		t.Fatalf("expected team label from labels, got %#v", fields)
+	}
+}
+
 func TestBuildAttachmentTitleFallsBackToReceiver(t *testing.T) {
 	payload := webhook.Payload{Receiver: "team-slack", Status: "firing"}
 	att := BuildAttachment(payload, "")
@@ -122,7 +134,22 @@ func TestAlertDetailsDedupAndSort(t *testing.T) {
 		{Annotations: map[string]string{"description": "a description"}},
 	}
 	got := alertDetails(alerts)
-	if len(got) != 2 || got[0] != "a description" || got[1] != "b description" {
-		t.Fatalf("expected deduped, sorted details, got %v", got)
+	want := "a description\nb description"
+	if got != want {
+		t.Fatalf("expected deduped, sorted details %q, got %q", want, got)
+	}
+}
+
+func TestAlertDetailsGroupsFiringAndResolvedUnderSubheadings(t *testing.T) {
+	alerts := []webhook.Alert{
+		{Status: "resolved", Annotations: map[string]string{"description": "b resolved"}},
+		{Status: "firing", Annotations: map[string]string{"description": "z firing"}},
+		{Status: "firing", Annotations: map[string]string{"description": "a firing"}},
+		{Status: "resolved", Annotations: map[string]string{"description": "b resolved"}},
+	}
+	got := alertDetails(alerts)
+	want := "*Firing (2)*\na firing\nz firing\n\n*Resolved (1)*\nb resolved"
+	if got != want {
+		t.Fatalf("expected:\n%s\ngot:\n%s", want, got)
 	}
 }
