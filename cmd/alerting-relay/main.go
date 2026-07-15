@@ -8,7 +8,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -37,7 +37,8 @@ func loadConfig() Config {
 	var channels map[string]ClusterChannels
 	if raw := os.Getenv("SLACK_CHANNELS"); raw != "" {
 		if err := json.Unmarshal([]byte(raw), &channels); err != nil {
-			log.Fatalf("invalid SLACK_CHANNELS: %v", err)
+			slog.Error("invalid SLACK_CHANNELS", "err", err)
+			os.Exit(1)
 		}
 	}
 	return Config{
@@ -49,6 +50,32 @@ func loadConfig() Config {
 	}
 }
 
+// parseLevel maps LOG_LEVEL to a slog level, defaulting to info for unset or
+// unrecognized values.
+func parseLevel(s string) slog.Level {
+	switch strings.ToLower(s) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
+// newLogger builds the process-wide logger from LOG_FORMAT ("json" or
+// "text", default "text") and LOG_LEVEL ("debug"/"info"/"warn"/"error",
+// default "info").
+func newLogger() *slog.Logger {
+	opts := &slog.HandlerOptions{Level: parseLevel(os.Getenv("LOG_LEVEL"))}
+	if strings.EqualFold(os.Getenv("LOG_FORMAT"), "json") {
+		return slog.New(slog.NewJSONHandler(os.Stdout, opts))
+	}
+	return slog.New(slog.NewTextHandler(os.Stdout, opts))
+}
+
 // highSeverity is the set of severity values routed to the "alerting" channel;
 // anything else (warning, info, unset) goes to "notifications".
 var highSeverity = map[string]bool{"critical": true, "high": true}
@@ -56,8 +83,14 @@ var highSeverity = map[string]bool{"critical": true, "high": true}
 // resolveChannel picks the destination Slack channel from the alert's own
 // cluster/severity labels — the relay is the single place this mapping lives,
 // so Alertmanager doesn't need per-cluster receiver config to route correctly.
+// Alerts with no "cluster" label (e.g. cluster-agnostic rules) route through
+// the "default" entry, if configured.
 func resolveChannel(channels map[string]ClusterChannels, labels map[string]string) (string, bool) {
-	cluster, ok := channels[labels["cluster"]]
+	clusterLabel := labels["cluster"]
+	if clusterLabel == "" {
+		clusterLabel = "default"
+	}
+	cluster, ok := channels[clusterLabel]
 	if !ok {
 		return "", false
 	}
@@ -87,7 +120,7 @@ func (rl *relay) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := rl.handleGroup(payload); err != nil {
-		log.Printf("handle group %s/%s: %v", payload.Receiver, payload.GroupKey, err)
+		slog.Error("handle group", "receiver", payload.Receiver, "group_key", payload.GroupKey, "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -146,22 +179,25 @@ func (rl *relay) startCleanupLoop() {
 		for range ticker.C {
 			n, err := rl.store.DeleteResolvedOlderThan(24 * time.Hour)
 			if err != nil {
-				log.Printf("cleanup: %v", err)
+				slog.Error("cleanup", "err", err)
 				continue
 			}
 			if n > 0 {
-				log.Printf("cleanup: reaped %d resolved group(s)", n)
+				slog.Info("cleanup reaped resolved groups", "count", n)
 			}
 		}
 	}()
 }
 
 func main() {
+	slog.SetDefault(newLogger())
+
 	cfg := loadConfig()
 
 	st, err := store.New(cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("connect store: %v", err)
+		slog.Error("connect store", "err", err)
+		os.Exit(1)
 	}
 
 	rl := &relay{cfg: cfg, store: st, slack: slack.New(cfg.SlackToken)}
@@ -173,6 +209,9 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	log.Printf("alerting-relay listening on %s", cfg.Addr)
-	log.Fatal(http.ListenAndServe(cfg.Addr, mux))
+	slog.Info("alerting-relay listening", "addr", cfg.Addr)
+	if err := http.ListenAndServe(cfg.Addr, mux); err != nil {
+		slog.Error("server", "err", err)
+		os.Exit(1)
+	}
 }

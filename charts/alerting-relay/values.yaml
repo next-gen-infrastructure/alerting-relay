@@ -21,6 +21,8 @@ configMap:
   name: alerting-relay
   # content:
   #   SLACK_CHANNELS: '{"cluster-a":{"alerting":"#alerts","notifications":"#notify"}}'
+  #   LOG_FORMAT: "json"
+  #   LOG_LEVEL: "info"
 
 serviceAccount:
   create: false
@@ -34,6 +36,8 @@ podLabels: {}
 
 podSecurityContext:
   runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
   seccompProfile:
     type: RuntimeDefault
 

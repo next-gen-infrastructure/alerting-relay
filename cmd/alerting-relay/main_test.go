@@ -1,6 +1,26 @@
 package main
 
-import "testing"
+import (
+	"log/slog"
+	"testing"
+)
+
+func TestParseLevel(t *testing.T) {
+	cases := map[string]slog.Level{
+		"debug":   slog.LevelDebug,
+		"INFO":    slog.LevelInfo,
+		"warn":    slog.LevelWarn,
+		"warning": slog.LevelWarn,
+		"error":   slog.LevelError,
+		"":        slog.LevelInfo,
+		"bogus":   slog.LevelInfo,
+	}
+	for in, want := range cases {
+		if got := parseLevel(in); got != want {
+			t.Errorf("parseLevel(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
 
 func TestResolveChannel(t *testing.T) {
 	channels := map[string]ClusterChannels{
@@ -21,5 +41,13 @@ func TestResolveChannel(t *testing.T) {
 	}
 	if _, ok := resolveChannel(channels, map[string]string{"cluster": "staging", "severity": "critical"}); ok {
 		t.Fatalf("expected unknown cluster to have no channel")
+	}
+
+	channels["default"] = ClusterChannels{Alerting: "C-DEFAULT-ALERTS", Notifications: "C-DEFAULT-NOTIFS"}
+	if ch, ok := resolveChannel(channels, map[string]string{"severity": "critical"}); !ok || ch != "C-DEFAULT-ALERTS" {
+		t.Fatalf("expected no cluster label -> default alerting channel, got %q, ok=%v", ch, ok)
+	}
+	if ch, ok := resolveChannel(channels, map[string]string{"cluster": "", "severity": "warning"}); !ok || ch != "C-DEFAULT-NOTIFS" {
+		t.Fatalf("expected empty cluster label -> default notifications channel, got %q, ok=%v", ch, ok)
 	}
 }

@@ -22,8 +22,10 @@ Set via environment variables:
 |------------------|----------------------------------------------------------------|
 | `DATABASE_URL`   | Postgres DSN                                                    |
 | `SLACK_BOT_TOKEN`| Slack bot token                                                 |
-| `SLACK_CHANNELS` | JSON mapping cluster label -> `{"alerting": "...", "notifications": "..."}` |
+| `SLACK_CHANNELS` | JSON mapping cluster label -> `{"alerting": "...", "notifications": "..."}`. A `"default"` entry is used when an alert has no `cluster` label. |
 | `WEBHOOK_TOKEN`  | Bearer token required on incoming `/webhook` requests           |
+| `LOG_FORMAT`     | `text` (default) or `json`                                      |
+| `LOG_LEVEL`      | `debug`, `info` (default), `warn`, or `error`                    |
 
 Listens on `:8080`, exposing `/webhook` (Alertmanager `webhook_configs` target) and `/healthz`.
 
