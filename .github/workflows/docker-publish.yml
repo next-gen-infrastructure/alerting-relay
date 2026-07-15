@@ -3,13 +3,13 @@ name: Build and publish Docker image
 on:
   push:
     branches: [main]
-    tags: ["v*"]
     paths:
       - "cmd/**"
       - "internal/**"
       - "go.mod"
       - "go.sum"
       - "Dockerfile"
+  workflow_dispatch:
 
 permissions:
   contents: read

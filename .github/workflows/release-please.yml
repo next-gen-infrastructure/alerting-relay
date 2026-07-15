@@ -7,9 +7,22 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
       - uses: googleapis/release-please-action@v5
+        id: release
+
+      # release-please creates the release/tag via GITHUB_TOKEN, which GitHub
+      # excludes from triggering other workflows' `push: tags` events — so
+      # dispatch the publish workflows explicitly for the new tag instead.
+      - name: Trigger publish workflows
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run docker-publish.yml --ref "${{ steps.release.outputs.tag_name }}"
+          gh workflow run helm-publish.yml --ref "${{ steps.release.outputs.tag_name }}"
