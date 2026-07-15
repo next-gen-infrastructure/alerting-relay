@@ -32,8 +32,8 @@ spec:
         - name: alerting-relay
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy | default (eq (.Values.image.tag | default .Chart.AppVersion) "latest" | ternary "Always" "IfNotPresent") }}
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}
