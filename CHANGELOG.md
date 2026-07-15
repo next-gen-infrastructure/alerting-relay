@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.4.0...v0.5.0) (2026-07-15)
+
+
+### Features
+
+* add Grafana silence and dashboard buttons to Slack alerts ([6355cfd](https://github.com/next-gen-infrastructure/alerting-relay/commit/6355cfd3932047443f713cb1c574205cd2f45266))
+
 ## [0.4.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.3.0...v0.4.0) (2026-07-15)
 
 
