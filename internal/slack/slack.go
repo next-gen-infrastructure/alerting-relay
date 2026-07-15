@@ -76,6 +76,17 @@ func BuildAttachment(payload webhook.Payload, grafanaURL string) slackapi.Attach
 	if title == "" {
 		title = payload.Receiver
 	}
+	numFiring, numResolved := alertCounts(payload.Alerts)
+	var parts []string
+	if numFiring > 0 {
+		parts = append(parts, fmt.Sprintf("FIRING: %d", numFiring))
+	}
+	if numResolved > 0 {
+		parts = append(parts, fmt.Sprintf("RESOLVED: %d", numResolved))
+	}
+	if len(parts) > 0 {
+		title = fmt.Sprintf("[%s] %s", strings.Join(parts, ", "), title)
+	}
 	if len(title) > 150 {
 		title = title[:150]
 	}
@@ -136,6 +147,19 @@ func metadataFields(labels map[string]string) []*slackapi.TextBlockObject {
 		add("Team", "@"+team)
 	}
 	return fields
+}
+
+// alertCounts tallies firing/resolved alerts within the group for the header.
+func alertCounts(alerts []webhook.Alert) (firing, resolved int) {
+	for _, a := range alerts {
+		switch a.Status {
+		case "firing":
+			firing++
+		case "resolved":
+			resolved++
+		}
+	}
+	return firing, resolved
 }
 
 // alertDetails collects each alert's description/message, de-duplicated and

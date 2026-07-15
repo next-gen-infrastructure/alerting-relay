@@ -26,8 +26,8 @@ func testPayload(status string) webhook.Payload {
 			"dashboard_url": "https://grafana.infra.emil.de/d/app-error-logs",
 		},
 		Alerts: []webhook.Alert{
-			{Annotations: map[string]string{"description": "b description"}},
-			{Annotations: map[string]string{"description": "a description"}},
+			{Status: status, Annotations: map[string]string{"description": "b description"}},
+			{Status: status, Annotations: map[string]string{"description": "a description"}},
 		},
 	}
 }
@@ -49,12 +49,24 @@ func TestBuildAttachmentFiring(t *testing.T) {
 	}
 
 	header, ok := att.Blocks.BlockSet[0].(*slackapi.HeaderBlock)
-	if !ok || header.Text.Text != "HighCPU" {
-		t.Fatalf("expected header block with alertname title, got %#v", att.Blocks.BlockSet[0])
+	if !ok || header.Text.Text != "[FIRING: 2] HighCPU" {
+		t.Fatalf("expected header block with firing count and alertname title, got %#v", att.Blocks.BlockSet[0])
 	}
 
 	if !hasBlockType(att.Blocks.BlockSet, slackapi.MBTAction) {
 		t.Fatalf("expected a runbook action block when runbook_url is set and firing")
+	}
+}
+
+func TestBuildAttachmentHeaderCountsMixedStatuses(t *testing.T) {
+	payload := testPayload("firing")
+	payload.Alerts[0].Status = "resolved"
+
+	att := BuildAttachment(payload, "https://grafana.infra.emil.de")
+
+	header := att.Blocks.BlockSet[0].(*slackapi.HeaderBlock)
+	if header.Text.Text != "[FIRING: 1, RESOLVED: 1] HighCPU" {
+		t.Fatalf("expected mixed firing/resolved counts in header, got %q", header.Text.Text)
 	}
 }
 
@@ -75,7 +87,7 @@ func TestBuildAttachmentTitleFallsBackToReceiver(t *testing.T) {
 
 	header := att.Blocks.BlockSet[0].(*slackapi.HeaderBlock)
 	if header.Text.Text != "team-slack" {
-		t.Fatalf("expected receiver as title fallback, got %q", header.Text.Text)
+		t.Fatalf("expected receiver as title fallback with no count prefix, got %q", header.Text.Text)
 	}
 }
 
