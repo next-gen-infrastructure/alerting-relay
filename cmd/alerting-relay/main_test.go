@@ -51,3 +51,20 @@ func TestResolveChannel(t *testing.T) {
 		t.Fatalf("expected empty cluster label -> default notifications channel, got %q, ok=%v", ch, ok)
 	}
 }
+
+func TestResolveGrafanaURL(t *testing.T) {
+	channels := map[string]ClusterChannels{
+		"dev":  {GrafanaURL: "https://grafana-dev.example.com"},
+		"prod": {},
+	}
+
+	if got := resolveGrafanaURL(channels, "https://grafana.example.com", map[string]string{"cluster": "dev"}); got != "https://grafana-dev.example.com" {
+		t.Fatalf("expected per-cluster override, got %q", got)
+	}
+	if got := resolveGrafanaURL(channels, "https://grafana.example.com", map[string]string{"cluster": "prod"}); got != "https://grafana.example.com" {
+		t.Fatalf("expected default when cluster has no override, got %q", got)
+	}
+	if got := resolveGrafanaURL(channels, "https://grafana.example.com", map[string]string{"cluster": "unknown"}); got != "https://grafana.example.com" {
+		t.Fatalf("expected default for unknown cluster, got %q", got)
+	}
+}

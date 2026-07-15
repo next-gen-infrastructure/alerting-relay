@@ -19,10 +19,12 @@ import (
 	"alerting-relay/internal/webhook"
 )
 
-// ClusterChannels is one cluster's Slack destinations, split by severity tier.
+// ClusterChannels is one cluster's Slack destinations, split by severity
+// tier, plus an optional Grafana base URL override for that cluster.
 type ClusterChannels struct {
 	Alerting      string `json:"alerting"`
 	Notifications string `json:"notifications"`
+	GrafanaURL    string `json:"grafana_url,omitempty"`
 }
 
 type Config struct {
@@ -30,6 +32,7 @@ type Config struct {
 	SlackToken    string
 	SlackChannels map[string]ClusterChannels // cluster label -> channels
 	WebhookToken  string
+	GrafanaURL    string // default Grafana base URL, overridable per cluster
 	Addr          string
 }
 
@@ -46,6 +49,7 @@ func loadConfig() Config {
 		SlackToken:    os.Getenv("SLACK_BOT_TOKEN"),
 		SlackChannels: channels,
 		WebhookToken:  os.Getenv("WEBHOOK_TOKEN"),
+		GrafanaURL:    os.Getenv("GRAFANA_URL"),
 		Addr:          ":8080",
 	}
 }
@@ -100,6 +104,20 @@ func resolveChannel(channels map[string]ClusterChannels, labels map[string]strin
 	return cluster.Notifications, cluster.Notifications != ""
 }
 
+// resolveGrafanaURL picks the Grafana base URL for an alert's cluster label,
+// preferring a per-cluster override in SLACK_CHANNELS, falling back to the
+// GRAFANA_URL default.
+func resolveGrafanaURL(channels map[string]ClusterChannels, defaultURL string, labels map[string]string) string {
+	clusterLabel := labels["cluster"]
+	if clusterLabel == "" {
+		clusterLabel = "default"
+	}
+	if cluster, ok := channels[clusterLabel]; ok && cluster.GrafanaURL != "" {
+		return cluster.GrafanaURL
+	}
+	return defaultURL
+}
+
 type relay struct {
 	cfg   Config
 	store *store.Store
@@ -133,7 +151,8 @@ func (rl *relay) handleGroup(payload webhook.Payload) error {
 		return err
 	}
 
-	attachment := slack.BuildAttachment(payload)
+	grafanaURL := resolveGrafanaURL(rl.cfg.SlackChannels, rl.cfg.GrafanaURL, payload.CommonLabels)
+	attachment := slack.BuildAttachment(payload, grafanaURL)
 
 	if existing == nil {
 		if payload.Status != "firing" {

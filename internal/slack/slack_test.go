@@ -21,8 +21,9 @@ func testPayload(status string) webhook.Payload {
 			"team":      "platform",
 		},
 		CommonAnnotations: map[string]string{
-			"summary":     "CPU usage above threshold",
-			"runbook_url": "https://runbooks.example.com/high-cpu",
+			"summary":       "CPU usage above threshold",
+			"runbook_url":   "https://runbooks.example.com/high-cpu",
+			"dashboard_url": "https://grafana.infra.emil.de/d/app-error-logs",
 		},
 		Alerts: []webhook.Alert{
 			{Annotations: map[string]string{"description": "b description"}},
@@ -41,7 +42,7 @@ func hasBlockType(blocks []slackapi.Block, t slackapi.MessageBlockType) bool {
 }
 
 func TestBuildAttachmentFiring(t *testing.T) {
-	att := BuildAttachment(testPayload("firing"))
+	att := BuildAttachment(testPayload("firing"), "https://grafana.infra.emil.de")
 
 	if att.Color != severityColors["critical"] {
 		t.Fatalf("expected critical severity color, got %q", att.Color)
@@ -58,7 +59,7 @@ func TestBuildAttachmentFiring(t *testing.T) {
 }
 
 func TestBuildAttachmentResolvedHasNoActionsAndGoodColor(t *testing.T) {
-	att := BuildAttachment(testPayload("resolved"))
+	att := BuildAttachment(testPayload("resolved"), "https://grafana.infra.emil.de")
 
 	if att.Color != resolvedColor {
 		t.Fatalf("expected resolved color %q, got %q", resolvedColor, att.Color)
@@ -70,11 +71,35 @@ func TestBuildAttachmentResolvedHasNoActionsAndGoodColor(t *testing.T) {
 
 func TestBuildAttachmentTitleFallsBackToReceiver(t *testing.T) {
 	payload := webhook.Payload{Receiver: "team-slack", Status: "firing"}
-	att := BuildAttachment(payload)
+	att := BuildAttachment(payload, "")
 
 	header := att.Blocks.BlockSet[0].(*slackapi.HeaderBlock)
 	if header.Text.Text != "team-slack" {
 		t.Fatalf("expected receiver as title fallback, got %q", header.Text.Text)
+	}
+}
+
+func TestSilenceURL(t *testing.T) {
+	labels := map[string]string{"alertname": "HighCPU", "cluster": "prod-eu", "namespace": "default", "severity": "critical"}
+
+	got := silenceURL("https://grafana.infra.emil.de/", labels)
+	want := "https://grafana.infra.emil.de/alerting/silence/new?alertmanager=alert-prod-eu&matcher=alertname%3DHighCPU&matcher=cluster%3Dprod-eu&matcher=namespace%3Ddefault"
+	if got != want {
+		t.Fatalf("silenceURL mismatch:\ngot  %s\nwant %s", got, want)
+	}
+
+	if silenceURL("", labels) != "" {
+		t.Fatalf("expected empty grafanaURL to yield no silence link")
+	}
+	if silenceURL("https://grafana.infra.emil.de", map[string]string{}) != "" {
+		t.Fatalf("expected missing cluster label to yield no silence link")
+	}
+}
+
+func TestActionElementsIncludesSilenceAndDashboardButtons(t *testing.T) {
+	elements := actionElements(map[string]string{"dashboard_url": "https://grafana.example.com/d/abc"}, "https://grafana.example.com/alerting/silence/new")
+	if len(elements) != 2 {
+		t.Fatalf("expected silence + dashboard buttons, got %d elements", len(elements))
 	}
 }
 

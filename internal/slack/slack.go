@@ -4,6 +4,7 @@ package slack
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -22,7 +23,7 @@ var severityColors = map[string]string{
 
 const (
 	defaultColor  = "#1976D2"
-	resolvedColor = "good"
+	resolvedColor = "#2eb67d"
 )
 
 var prodPrefix = regexp.MustCompile(`(?i)^production`)
@@ -58,7 +59,7 @@ func (c *Client) UpdateRoot(channel, ts string, attachment slackapi.Attachment) 
 // (firing-only) a runbook button. Callers just send the alert's default
 // labels/annotations — this is the one place formatting decisions live, so
 // the root post, thread updates, and the resolved edit all render the same way.
-func BuildAttachment(payload webhook.Payload) slackapi.Attachment {
+func BuildAttachment(payload webhook.Payload, grafanaURL string) slackapi.Attachment {
 	firing := payload.Status == "firing"
 	labels := payload.CommonLabels
 	ann := payload.CommonAnnotations
@@ -100,7 +101,8 @@ func BuildAttachment(payload webhook.Payload) slackapi.Attachment {
 	}
 
 	if firing {
-		if elements := actionElements(ann); len(elements) > 0 {
+		silence := silenceURL(grafanaURL, labels)
+		if elements := actionElements(ann, silence); len(elements) > 0 {
 			blocks = append(blocks, slackapi.NewDividerBlock())
 			blocks = append(blocks, slackapi.NewActionBlock("", elements...))
 		}
@@ -153,14 +155,45 @@ func alertDetails(alerts []webhook.Alert) []string {
 	return details
 }
 
-func actionElements(ann map[string]string) []slackapi.BlockElement {
+// actionElements builds the runbook/silence/dashboard buttons. runbook_url and
+// dashboard_url come from annotations (rule authors set them per alert, same
+// as runbook_url always has); silence is computed by the caller via
+// silenceURL since it's fully derivable from the alert's own labels.
+func actionElements(ann map[string]string, silence string) []slackapi.BlockElement {
 	var elements []slackapi.BlockElement
 	if url := ann["runbook_url"]; url != "" {
-		btn := slackapi.NewButtonBlockElement("runbook", "runbook",
-			slackapi.NewTextBlockObject(slackapi.PlainTextType, ":green_book: Runbook", true, false)).WithURL(url)
-		elements = append(elements, btn)
+		elements = append(elements, actionButton("runbook", ":green_book: Runbook", url))
+	}
+	if silence != "" {
+		elements = append(elements, actionButton("silence", ":no_bell: Silence", silence))
+	}
+	if url := ann["dashboard_url"]; url != "" {
+		elements = append(elements, actionButton("dashboard", ":bar_chart: Dashboard", url))
 	}
 	return elements
+}
+
+func actionButton(actionID, label, url string) slackapi.BlockElement {
+	return slackapi.NewButtonBlockElement(actionID, actionID,
+		slackapi.NewTextBlockObject(slackapi.PlainTextType, label, true, false)).WithURL(url)
+}
+
+// silenceURL builds a Grafana silence-creation deep link for an alert's
+// cluster/alertname/namespace labels, matching the alert group's own
+// group_by (cluster, severity, namespace) minus severity, so one silence
+// covers the whole notified group across severity bumps.
+func silenceURL(grafanaURL string, labels map[string]string) string {
+	cluster := labels["cluster"]
+	if grafanaURL == "" || cluster == "" {
+		return ""
+	}
+	q := url.Values{"alertmanager": {"alert-" + cluster}}
+	for _, key := range []string{"alertname", "cluster", "namespace"} {
+		if v := labels[key]; v != "" {
+			q.Add("matcher", key+"="+v)
+		}
+	}
+	return strings.TrimRight(grafanaURL, "/") + "/alerting/silence/new?" + q.Encode()
 }
 
 func capitalize(s string) string {
