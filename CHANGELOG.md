@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.7.0...v0.7.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* **chart:** default image tag to appVersion, pullPolicy to Always for latest ([536965c](https://github.com/next-gen-infrastructure/alerting-relay/commit/536965cddb1eb3b0e338995bd58e63d945714b3c))
+
 ## [0.7.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.6.0...v0.7.0) (2026-07-15)
 
 
