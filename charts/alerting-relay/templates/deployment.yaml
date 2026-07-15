@@ -1,39 +1,66 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: alerting-relay
+  name: {{ include "alerting-relay.fullname" . }}
   labels:
-    app: alerting-relay
+    {{- include "alerting-relay.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   strategy:
+    # No local state to drain: safe to tear down the old pod before the new one is ready.
     type: Recreate
   selector:
     matchLabels:
-      app: alerting-relay
+      {{- include "alerting-relay.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        app: alerting-relay
+        {{- include "alerting-relay.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
+      serviceAccountName: {{ include "alerting-relay.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: alerting-relay
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
-            - containerPort: {{ .Values.service.port }}
+            - name: http
+              containerPort: {{ .Values.service.port }}
           envFrom:
             - secretRef:
-                name: {{ .Values.secretName }}
+                name: {{ .Values.secret.name }}
             - configMapRef:
-                name: {{ .Values.configMapName }}
+                name: {{ .Values.configMap.name }}
           livenessProbe:
             httpGet:
               path: /healthz
-              port: {{ .Values.service.port }}
+              port: http
           readinessProbe:
             httpGet:
               path: /healthz
-              port: {{ .Values.service.port }}
+              port: http
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

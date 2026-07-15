@@ -1,3 +1,6 @@
+nameOverride: ""
+fullnameOverride: ""
+
 replicaCount: 1
 
 image:
@@ -5,20 +8,54 @@ image:
   tag: latest
   pullPolicy: IfNotPresent
 
-service:
-  port: 8080
+secret:
+  create: false
+  name: alerting-relay
+  # content:
+  #   DATABASE_URL: "postgres://user:pass@host:5432/alerting_relay"
+  #   SLACK_BOT_TOKEN: "xoxb-..."
+  #   WEBHOOK_TOKEN: "shared-bearer-secret"
 
-# Names of a pre-existing Secret/ConfigMap holding the relay's config
-# (DATABASE_URL, SLACK_BOT_TOKEN, WEBHOOK_TOKEN, SLACK_CHANNELS) — created
-# outside this chart since they carry Terraform-computed secrets.
-secretName: alerting-relay
-configMapName: alerting-relay
+configMap:
+  create: false
+  name: alerting-relay
+  # content:
+  #   SLACK_CHANNELS: '{"cluster-a":{"alerting":"#alerts","notifications":"#notify"}}'
+
+serviceAccount:
+  create: false
+  name: ""
+  annotations: {}
+  # The relay never talks to the Kubernetes API.
+  automountServiceAccountToken: false
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+service:
+  type: ClusterIP
+  port: 8080
 
 ingress:
   enabled: true
-  className: traefik-private
+  className: ""
   host: ""
   annotations:
     traefik.ingress.kubernetes.io/router.tls: "true"
 
 resources: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -4,3 +4,8 @@ description: Aggregates Alertmanager alerts into threaded, resolve-updating Slac
 type: application
 version: 0.2.0
 appVersion: 0.2.0
+home: https://github.com/next-gen-infrastructure/alerting-relay
+sources:
+  - https://github.com/next-gen-infrastructure/alerting-relay
+maintainers:
+  - name: next-gen-infrastructure

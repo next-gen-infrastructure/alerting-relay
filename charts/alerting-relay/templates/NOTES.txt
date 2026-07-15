@@ -1,0 +1,10 @@
+alerting-relay deployed as {{ include "alerting-relay.fullname" . }} in {{ .Release.Namespace }}.
+
+{{- if .Values.ingress.enabled }}
+Webhook URL: https://{{ .Values.ingress.host }}/webhook
+{{- else }}
+Ingress is disabled; reach it via:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "alerting-relay.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+{{- end }}
+
+Health check: /healthz

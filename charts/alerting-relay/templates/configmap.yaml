@@ -1,0 +1,10 @@
+{{- if .Values.configMap.create }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.configMap.name }}
+  labels:
+    {{- include "alerting-relay.labels" . | nindent 4 }}
+data:
+  {{- toYaml .Values.configMap.content | nindent 2 }}
+{{- end }}

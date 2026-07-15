@@ -46,7 +46,7 @@ helm install alerting-relay oci://ghcr.io/next-gen-infrastructure/charts/alertin
 
 `image.repository` defaults to `ghcr.io/next-gen-infrastructure/alerting-relay` (the image published by `docker-publish.yml`); override `image.tag` to pin a specific version instead of `latest`.
 
-The chart expects a pre-existing Secret and ConfigMap (names configurable via `secretName`/`configMapName`, default `alerting-relay`) providing the app's env vars (`DATABASE_URL`, `SLACK_BOT_TOKEN`, `WEBHOOK_TOKEN`, `SLACK_CHANNELS`) — it does not create them, since they carry values computed elsewhere (e.g. Terraform). See `charts/alerting-relay/values.yaml` for the full set of configurable values (replica count, image, service port, ingress class/annotations, resources).
+By default the chart references a pre-existing Secret and ConfigMap (names configurable via `secret.name`/`configMap.name`, default `alerting-relay`) providing the app's env vars (`DATABASE_URL`, `SLACK_BOT_TOKEN`, `WEBHOOK_TOKEN`, `SLACK_CHANNELS`) — bring your own however you manage config. Or set `secret.create`/`configMap.create` to `true` with `secret.content`/`configMap.content` to have the chart create them for you. See `charts/alerting-relay/values.yaml` for the full set of configurable values (replica count, image, service port, ingress class/annotations, resources).
 
 ## License
 
