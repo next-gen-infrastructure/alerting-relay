@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.3.0...v0.4.0) (2026-07-15)
+
+
+### Features
+
+* add default cluster routing, structured logging, and explicit pod uid/gid ([8af0a88](https://github.com/next-gen-infrastructure/alerting-relay/commit/8af0a8815d57977b908c23c885b04c7d9de31014))
+
 ## [0.3.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.2.0...v0.3.0) (2026-07-15)
 
 
