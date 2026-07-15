@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.2.0...v0.3.0) (2026-07-15)
+
+
+### Features
+
+* **chart:** rework alerting-relay Helm chart for production readiness ([ff0f264](https://github.com/next-gen-infrastructure/alerting-relay/commit/ff0f2646005875cb7e9af8502cd30e0e5c979dc7))
+
 ## [0.2.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.1.0...v0.2.0) (2026-07-15)
 
 
