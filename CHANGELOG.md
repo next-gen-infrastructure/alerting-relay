@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.5.0...v0.6.0) (2026-07-15)
+
+
+### Features
+
+* show firing/resolved alert counts in Slack message header ([8a54210](https://github.com/next-gen-infrastructure/alerting-relay/commit/8a54210af3bb53e5e88f24c2e53adb80fb1e5973))
+
 ## [0.5.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.4.0...v0.5.0) (2026-07-15)
 
 
