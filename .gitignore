@@ -1,0 +1,6 @@
+/alerting-relay
+*.test
+*.out
+.env
+
+CLAUDE.md

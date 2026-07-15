@@ -1,0 +1,4 @@
+[tools]
+go = "1.26"
+helm = "4.2.3"
+pre-commit = "4.6.0"

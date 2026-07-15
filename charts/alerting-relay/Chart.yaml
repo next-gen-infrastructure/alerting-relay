@@ -1,0 +1,6 @@
+apiVersion: v2
+name: alerting-relay
+description: Aggregates Alertmanager alerts into threaded, resolve-updating Slack messages
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

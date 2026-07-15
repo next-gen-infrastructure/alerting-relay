@@ -1,0 +1,24 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/next-gen-infrastructure/alerting-relay
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  port: 8080
+
+# Names of a pre-existing Secret/ConfigMap holding the relay's config
+# (DATABASE_URL, SLACK_BOT_TOKEN, WEBHOOK_TOKEN, SLACK_CHANNELS) — created
+# outside this chart since they carry Terraform-computed secrets.
+secretName: alerting-relay
+configMapName: alerting-relay
+
+ingress:
+  enabled: true
+  className: traefik-private
+  host: ""
+  annotations:
+    traefik.ingress.kubernetes.io/router.tls: "true"
+
+resources: {}
