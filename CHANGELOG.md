@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.7.1...v0.8.0) (2026-07-16)
+
+
+### Features
+
+* include namespace/pod in Slack message title ([62720b5](https://github.com/next-gen-infrastructure/alerting-relay/commit/62720b5870a2d38ec775c9ca305cf92ffd764fae))
+* keep root message header/actions current on every alert change ([91ac487](https://github.com/next-gen-infrastructure/alerting-relay/commit/91ac4873749bb2faffde9666ff0e24cacf8ff1bc))
+* send real Slack pings for the alert Team field ([6538ff4](https://github.com/next-gen-infrastructure/alerting-relay/commit/6538ff4ea953f13078b09d1713f96260747f96df))
+
 ## [0.7.1](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.7.0...v0.7.1) (2026-07-15)
 
 
