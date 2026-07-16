@@ -1,7 +1,8 @@
 // Command alerting-relay receives Alertmanager webhooks, aggregates alerts by
 // group, and keeps a single Slack message per group up to date: firing posts
-// the root message, follow-ups reply in its thread, and resolution edits the
-// root message and drops a final thread reply.
+// the root message (bare, no counts yet), and every later update — including
+// resolution — edits the root's header with the current firing/resolved
+// tally and drops a lightweight instance-list reply in its thread.
 package main
 
 import (
@@ -152,7 +153,6 @@ func (rl *relay) handleGroup(payload webhook.Payload) error {
 	}
 
 	grafanaURL := resolveGrafanaURL(rl.cfg.SlackChannels, rl.cfg.GrafanaURL, payload.CommonLabels)
-	attachment := slack.BuildAttachment(payload, grafanaURL)
 
 	if existing == nil {
 		if payload.Status != "firing" {
@@ -162,14 +162,8 @@ func (rl *relay) handleGroup(payload webhook.Payload) error {
 		if !ok {
 			return fmt.Errorf("no slack channel configured for cluster %q", payload.CommonLabels["cluster"])
 		}
-		ts, err := rl.slack.PostRoot(channel, attachment)
+		ts, err := rl.slack.PostRoot(channel, slack.BuildAttachment(payload, grafanaURL, false))
 		if err != nil {
-			return err
-		}
-		// Root only ever gets edited once (on resolution below), which would
-		// otherwise erase the original firing content it started with. Post
-		// a copy into the thread right away so it stays visible either way.
-		if err := rl.slack.PostThreadReply(channel, ts, attachment); err != nil {
 			return err
 		}
 		return rl.store.Create(store.AlertGroup{
@@ -181,19 +175,17 @@ func (rl *relay) handleGroup(payload webhook.Payload) error {
 		})
 	}
 
-	if payload.Status == "resolved" {
-		if err := rl.slack.UpdateRoot(existing.Channel, existing.MessageTS, attachment); err != nil {
-			return err
-		}
-		if err := rl.slack.PostThreadReply(existing.Channel, existing.MessageTS, attachment); err != nil {
-			return err
-		}
-		return rl.store.MarkResolved(payload.Receiver, payload.GroupKey)
+	// Alert set changed since we last posted: keep the root's header current
+	// and drop a lightweight instance-list note in its thread.
+	if err := rl.slack.UpdateRoot(existing.Channel, existing.MessageTS, slack.BuildAttachment(payload, grafanaURL, true)); err != nil {
+		return err
+	}
+	if err := rl.slack.PostThreadReply(existing.Channel, existing.MessageTS, slack.BuildThreadUpdate(payload)); err != nil {
+		return err
 	}
 
-	// still firing, alert set changed since we last posted: reply in-thread.
-	if err := rl.slack.PostThreadReply(existing.Channel, existing.MessageTS, attachment); err != nil {
-		return err
+	if payload.Status == "resolved" {
+		return rl.store.MarkResolved(payload.Receiver, payload.GroupKey)
 	}
 	return rl.store.Touch(payload.Receiver, payload.GroupKey)
 }

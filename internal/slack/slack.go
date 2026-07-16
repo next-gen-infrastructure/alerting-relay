@@ -21,6 +21,13 @@ var severityColors = map[string]string{
 	"info":     "#1976D2",
 }
 
+var severityEmoji = map[string]string{
+	"critical": "\U0001F534", // red circle
+	"high":     "\U0001F7E0", // orange circle
+	"warning":  "\U0001F7E1", // yellow circle
+	"info":     "\U0001F535", // blue circle
+}
+
 const (
 	defaultColor  = "#1976D2"
 	resolvedColor = "#2eb67d"
@@ -54,12 +61,16 @@ func (c *Client) UpdateRoot(channel, ts string, attachment slackapi.Attachment) 
 	return err
 }
 
-// BuildAttachment renders one Alertmanager webhook payload into a Slack
-// attachment: header, a metadata grid, summary, deduped alert details, and
-// (firing-only) a runbook button. Callers just send the alert's default
-// labels/annotations — this is the one place formatting decisions live, so
-// the root post, thread updates, and the resolved edit all render the same way.
-func BuildAttachment(payload webhook.Payload, grafanaURL string) slackapi.Attachment {
+// BuildAttachment renders one Alertmanager webhook payload into the full
+// root-message Slack attachment: header, a metadata grid, summary, deduped
+// alert details, and the Runbook/Silence/Dashboard action buttons — kept on
+// the root even after resolution, since Runbook/Dashboard stay relevant and
+// the root is a single message that's continuously edited, not replaced.
+// This is the one place formatting decisions for the root message live.
+// includeCounts adds the current firing/resolved tally to the header —
+// false for the initial post (nothing has changed yet), true for every
+// later edit, so the header visibly tracks state as the group evolves.
+func BuildAttachment(payload webhook.Payload, grafanaURL string, includeCounts bool) slackapi.Attachment {
 	firing := payload.Status == "firing"
 	labels := payload.CommonLabels
 	ann := payload.CommonAnnotations
@@ -79,26 +90,38 @@ func BuildAttachment(payload webhook.Payload, grafanaURL string) slackapi.Attach
 	if scope := scopeSuffix(labels); scope != "" {
 		title = fmt.Sprintf("%s (%s)", title, scope)
 	}
-	numFiring, numResolved := alertCounts(payload.Alerts)
-	var parts []string
-	if numFiring > 0 {
-		parts = append(parts, fmt.Sprintf("FIRING: %d", numFiring))
+	if includeCounts {
+		numFiring, numResolved := alertCounts(payload.Alerts)
+		var parts []string
+		if numFiring > 0 {
+			parts = append(parts, fmt.Sprintf("FIRING: %d", numFiring))
+		}
+		if numResolved > 0 {
+			parts = append(parts, fmt.Sprintf("RESOLVED: %d", numResolved))
+		}
+		if len(parts) > 0 {
+			title = fmt.Sprintf("[%s] %s", strings.Join(parts, ", "), title)
+		}
 	}
-	if numResolved > 0 {
-		parts = append(parts, fmt.Sprintf("RESOLVED: %d", numResolved))
+
+	emoji := "✅" // resolved: white heavy check mark
+	if firing {
+		emoji = severityEmoji[labels["severity"]]
+		if emoji == "" {
+			emoji = severityEmoji["info"]
+		}
 	}
-	if len(parts) > 0 {
-		title = fmt.Sprintf("[%s] %s", strings.Join(parts, ", "), title)
-	}
+	title = emoji + " " + title
+
 	if len(title) > 150 {
-		title = title[:150]
+		title = string([]rune(title)[:150])
 	}
 
 	blocks := []slackapi.Block{
 		slackapi.NewHeaderBlock(slackapi.NewTextBlockObject(slackapi.PlainTextType, title, true, false)),
 	}
 
-	if fields := metadataFields(labels); len(fields) > 0 {
+	if fields := metadataFields(labels, firing); len(fields) > 0 {
 		blocks = append(blocks, slackapi.NewSectionBlock(nil, fields, nil))
 	}
 
@@ -108,12 +131,10 @@ func BuildAttachment(payload webhook.Payload, grafanaURL string) slackapi.Attach
 		))
 	}
 
-	if firing {
-		silence := silenceURL(grafanaURL, labels)
-		if elements := actionElements(ann, silence); len(elements) > 0 {
-			blocks = append(blocks, slackapi.NewDividerBlock())
-			blocks = append(blocks, slackapi.NewActionBlock("", elements...))
-		}
+	silence := silenceURL(grafanaURL, labels)
+	if elements := actionElements(ann, silence); len(elements) > 0 {
+		blocks = append(blocks, slackapi.NewDividerBlock())
+		blocks = append(blocks, slackapi.NewActionBlock("", elements...))
 	}
 
 	// Instance details go last: Slack auto-collapses long attachments behind
@@ -125,12 +146,45 @@ func BuildAttachment(payload webhook.Payload, grafanaURL string) slackapi.Attach
 		))
 	}
 
-	return slackapi.Attachment{Color: color, Blocks: slackapi.Blocks{BlockSet: blocks}}
+	return slackapi.Attachment{Color: color, Fallback: title, Blocks: slackapi.Blocks{BlockSet: blocks}}
+}
+
+// BuildThreadUpdate renders a lightweight thread reply for a change to an
+// already-posted group: just the current firing/resolved instance details.
+// The header/metadata/summary/actions already live on the root message
+// (kept current via BuildAttachment), so this doesn't repeat them.
+func BuildThreadUpdate(payload webhook.Payload) slackapi.Attachment {
+	firing := payload.Status == "firing"
+	color := resolvedColor
+	if firing {
+		color = defaultColor
+		if c, ok := severityColors[payload.CommonLabels["severity"]]; ok {
+			color = c
+		}
+	}
+
+	numFiring, numResolved := alertCounts(payload.Alerts)
+	var parts []string
+	if numFiring > 0 {
+		parts = append(parts, fmt.Sprintf("FIRING: %d", numFiring))
+	}
+	if numResolved > 0 {
+		parts = append(parts, fmt.Sprintf("RESOLVED: %d", numResolved))
+	}
+
+	var blocks []slackapi.Block
+	if details := alertDetails(payload.Alerts); details != "" {
+		blocks = append(blocks, slackapi.NewSectionBlock(
+			slackapi.NewTextBlockObject(slackapi.MarkdownType, details, false, false), nil, nil,
+		))
+	}
+
+	return slackapi.Attachment{Color: color, Fallback: strings.Join(parts, ", "), Blocks: slackapi.Blocks{BlockSet: blocks}}
 }
 
 // metadataFields renders the two-column grid (severity/cluster/namespace/instance/team),
 // same shape as the amazon-prometheus Lambda's buildBlockKit.
-func metadataFields(labels map[string]string) []*slackapi.TextBlockObject {
+func metadataFields(labels map[string]string, firing bool) []*slackapi.TextBlockObject {
 	var fields []*slackapi.TextBlockObject
 	add := func(label, value string) {
 		if value == "" {
@@ -139,7 +193,9 @@ func metadataFields(labels map[string]string) []*slackapi.TextBlockObject {
 		fields = append(fields, slackapi.NewTextBlockObject(slackapi.MarkdownType, fmt.Sprintf("*%s*\n%s", label, value), false, false))
 	}
 
-	add("Severity", capitalize(labels["severity"]))
+	if firing {
+		add("Severity", capitalize(labels["severity"]))
+	}
 	if cluster := labels["cluster"]; cluster != "" {
 		if prodPrefix.MatchString(cluster) {
 			add("Cluster", ":red_circle: "+cluster)

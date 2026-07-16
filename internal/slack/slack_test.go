@@ -1,6 +1,7 @@
 package slack
 
 import (
+	"strings"
 	"testing"
 
 	slackapi "github.com/slack-go/slack"
@@ -42,15 +43,19 @@ func hasBlockType(blocks []slackapi.Block, t slackapi.MessageBlockType) bool {
 }
 
 func TestBuildAttachmentFiring(t *testing.T) {
-	att := BuildAttachment(testPayload("firing"), "https://grafana.infra.emil.de")
+	att := BuildAttachment(testPayload("firing"), "https://grafana.infra.emil.de", true)
 
 	if att.Color != severityColors["critical"] {
 		t.Fatalf("expected critical severity color, got %q", att.Color)
 	}
 
 	header, ok := att.Blocks.BlockSet[0].(*slackapi.HeaderBlock)
-	if !ok || header.Text.Text != "[FIRING: 2] HighCPU (default)" {
-		t.Fatalf("expected header block with firing count, alertname and namespace title, got %#v", att.Blocks.BlockSet[0])
+	if !ok || header.Text.Text != "🔴 [FIRING: 2] HighCPU (default)" {
+		t.Fatalf("expected header block with severity emoji, firing count, alertname and namespace title, got %#v", att.Blocks.BlockSet[0])
+	}
+
+	if att.Fallback != header.Text.Text {
+		t.Fatalf("expected Fallback to match header title, got %q", att.Fallback)
 	}
 
 	if !hasBlockType(att.Blocks.BlockSet, slackapi.MBTAction) {
@@ -58,14 +63,37 @@ func TestBuildAttachmentFiring(t *testing.T) {
 	}
 }
 
+func TestBuildAttachmentInitialPostOmitsCounts(t *testing.T) {
+	att := BuildAttachment(testPayload("firing"), "https://grafana.infra.emil.de", false)
+
+	header := att.Blocks.BlockSet[0].(*slackapi.HeaderBlock)
+	if header.Text.Text != "🔴 HighCPU (default)" {
+		t.Fatalf("expected initial post header with no firing/resolved count, got %q", header.Text.Text)
+	}
+}
+
+func TestBuildThreadUpdateOmitsHeaderAndMetadata(t *testing.T) {
+	att := BuildThreadUpdate(testPayload("firing"))
+
+	if hasBlockType(att.Blocks.BlockSet, slackapi.MBTHeader) {
+		t.Fatalf("thread update must not repeat the root's header")
+	}
+	if hasBlockType(att.Blocks.BlockSet, slackapi.MBTAction) {
+		t.Fatalf("thread update must not repeat the root's action buttons")
+	}
+	if att.Fallback != "FIRING: 2" {
+		t.Fatalf("expected fallback to summarize the count change, got %q", att.Fallback)
+	}
+}
+
 func TestBuildAttachmentHeaderCountsMixedStatuses(t *testing.T) {
 	payload := testPayload("firing")
 	payload.Alerts[0].Status = "resolved"
 
-	att := BuildAttachment(payload, "https://grafana.infra.emil.de")
+	att := BuildAttachment(payload, "https://grafana.infra.emil.de", true)
 
 	header := att.Blocks.BlockSet[0].(*slackapi.HeaderBlock)
-	if header.Text.Text != "[FIRING: 1, RESOLVED: 1] HighCPU (default)" {
+	if header.Text.Text != "🔴 [FIRING: 1, RESOLVED: 1] HighCPU (default)" {
 		t.Fatalf("expected mixed firing/resolved counts in header, got %q", header.Text.Text)
 	}
 }
@@ -74,32 +102,44 @@ func TestBuildAttachmentTitleIncludesPod(t *testing.T) {
 	payload := testPayload("firing")
 	payload.CommonLabels["pod"] = "web-1"
 
-	att := BuildAttachment(payload, "https://grafana.infra.emil.de")
+	att := BuildAttachment(payload, "https://grafana.infra.emil.de", true)
 
 	header := att.Blocks.BlockSet[0].(*slackapi.HeaderBlock)
-	if header.Text.Text != "[FIRING: 2] HighCPU (default/web-1)" {
+	if header.Text.Text != "🔴 [FIRING: 2] HighCPU (default/web-1)" {
 		t.Fatalf("expected namespace/pod in header, got %q", header.Text.Text)
 	}
 }
 
-func TestBuildAttachmentResolvedHasNoActionsAndGoodColor(t *testing.T) {
-	att := BuildAttachment(testPayload("resolved"), "https://grafana.infra.emil.de")
+func TestBuildAttachmentResolvedKeepsActionsAndGoodColor(t *testing.T) {
+	att := BuildAttachment(testPayload("resolved"), "https://grafana.infra.emil.de", true)
 
 	if att.Color != resolvedColor {
 		t.Fatalf("expected resolved color %q, got %q", resolvedColor, att.Color)
 	}
-	if hasBlockType(att.Blocks.BlockSet, slackapi.MBTAction) {
-		t.Fatalf("resolved messages must not show action buttons")
+	if !hasBlockType(att.Blocks.BlockSet, slackapi.MBTAction) {
+		t.Fatalf("root message must keep its action buttons after resolution")
+	}
+
+	header := att.Blocks.BlockSet[0].(*slackapi.HeaderBlock)
+	if !strings.HasPrefix(header.Text.Text, "✅ ") {
+		t.Fatalf("expected resolved header to use the resolved checkmark, got %q", header.Text.Text)
+	}
+
+	fields := metadataFields(testPayload("resolved").CommonLabels, false)
+	for _, f := range fields {
+		if strings.HasPrefix(f.Text, "*Severity*") {
+			t.Fatalf("resolved messages must not show a severity field, got %#v", fields)
+		}
 	}
 }
 
 func TestMetadataFieldsDefaultsTeamToOncall(t *testing.T) {
-	fields := metadataFields(map[string]string{})
+	fields := metadataFields(map[string]string{}, true)
 	if len(fields) != 1 || fields[0].Text != "*Team*\n@team-devops-oncall" {
 		t.Fatalf("expected default oncall team field, got %#v", fields)
 	}
 
-	fields = metadataFields(map[string]string{"team": "platform"})
+	fields = metadataFields(map[string]string{"team": "platform"}, true)
 	if len(fields) != 1 || fields[0].Text != "*Team*\n@platform" {
 		t.Fatalf("expected team label from labels, got %#v", fields)
 	}
@@ -107,10 +147,10 @@ func TestMetadataFieldsDefaultsTeamToOncall(t *testing.T) {
 
 func TestBuildAttachmentTitleFallsBackToReceiver(t *testing.T) {
 	payload := webhook.Payload{Receiver: "team-slack", Status: "firing"}
-	att := BuildAttachment(payload, "")
+	att := BuildAttachment(payload, "", false)
 
 	header := att.Blocks.BlockSet[0].(*slackapi.HeaderBlock)
-	if header.Text.Text != "team-slack" {
+	if header.Text.Text != "🔵 team-slack" {
 		t.Fatalf("expected receiver as title fallback with no count prefix, got %q", header.Text.Text)
 	}
 }

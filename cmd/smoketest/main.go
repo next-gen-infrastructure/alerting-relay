@@ -34,41 +34,36 @@ func main() {
 		},
 	}
 
-	// 1 instance down
+	// 1 instance down: bare root post, no counts yet.
 	step1 := base
 	step1.Status = "firing"
 	step1.Alerts = []webhook.Alert{
 		{Status: "firing", Annotations: map[string]string{"description": "instance-1 down"}},
 	}
-	rootAttachment := slack.BuildAttachment(step1, grafanaURL)
-	ts, err := client.PostRoot(channel, rootAttachment)
+	ts, err := client.PostRoot(channel, slack.BuildAttachment(step1, grafanaURL, false))
 	if err != nil {
 		fmt.Println("post root error:", err)
 		return
 	}
 	fmt.Println("posted root ts:", ts)
-
-	// duplicate the root into its own thread immediately, so it stays
-	// visible even after the root gets edited on resolution
-	if err := client.PostThreadReply(channel, ts, rootAttachment); err != nil {
-		fmt.Println("original repost error:", err)
-		return
-	}
-	fmt.Println("duplicated root into thread")
 	time.Sleep(10 * time.Second)
 
-	// 2 instances down
+	// 2 instances down: root header now shows the tally, thread gets the instance list.
 	step2 := base
 	step2.Status = "firing"
 	step2.Alerts = []webhook.Alert{
 		{Status: "firing", Annotations: map[string]string{"description": "instance-1 down"}},
 		{Status: "firing", Annotations: map[string]string{"description": "instance-2 down"}},
 	}
-	if err := client.PostThreadReply(channel, ts, slack.BuildAttachment(step2, grafanaURL)); err != nil {
+	if err := client.UpdateRoot(channel, ts, slack.BuildAttachment(step2, grafanaURL, true)); err != nil {
+		fmt.Println("update root error:", err)
+		return
+	}
+	if err := client.PostThreadReply(channel, ts, slack.BuildThreadUpdate(step2)); err != nil {
 		fmt.Println("thread reply error:", err)
 		return
 	}
-	fmt.Println("posted thread reply: 2 firing")
+	fmt.Println("root updated + thread reply posted: 2 firing")
 	time.Sleep(10 * time.Second)
 
 	// first recovered, second still down
@@ -78,11 +73,15 @@ func main() {
 		{Status: "resolved", Annotations: map[string]string{"description": "instance-1 down"}},
 		{Status: "firing", Annotations: map[string]string{"description": "instance-2 down"}},
 	}
-	if err := client.PostThreadReply(channel, ts, slack.BuildAttachment(step3, grafanaURL)); err != nil {
+	if err := client.UpdateRoot(channel, ts, slack.BuildAttachment(step3, grafanaURL, true)); err != nil {
+		fmt.Println("update root error:", err)
+		return
+	}
+	if err := client.PostThreadReply(channel, ts, slack.BuildThreadUpdate(step3)); err != nil {
 		fmt.Println("thread reply error:", err)
 		return
 	}
-	fmt.Println("posted thread reply: 1 firing, 1 resolved")
+	fmt.Println("root updated + thread reply posted: 1 firing, 1 resolved")
 	time.Sleep(10 * time.Second)
 
 	// all instances recovered
@@ -92,12 +91,11 @@ func main() {
 		{Status: "resolved", Annotations: map[string]string{"description": "instance-1 down"}},
 		{Status: "resolved", Annotations: map[string]string{"description": "instance-2 down"}},
 	}
-	attachment := slack.BuildAttachment(step4, grafanaURL)
-	if err := client.UpdateRoot(channel, ts, attachment); err != nil {
+	if err := client.UpdateRoot(channel, ts, slack.BuildAttachment(step4, grafanaURL, true)); err != nil {
 		fmt.Println("update root error:", err)
 		return
 	}
-	if err := client.PostThreadReply(channel, ts, attachment); err != nil {
+	if err := client.PostThreadReply(channel, ts, slack.BuildThreadUpdate(step4)); err != nil {
 		fmt.Println("resolved thread reply error:", err)
 		return
 	}
