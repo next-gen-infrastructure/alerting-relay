@@ -76,6 +76,9 @@ func BuildAttachment(payload webhook.Payload, grafanaURL string) slackapi.Attach
 	if title == "" {
 		title = payload.Receiver
 	}
+	if scope := scopeSuffix(labels); scope != "" {
+		title = fmt.Sprintf("%s (%s)", title, scope)
+	}
 	numFiring, numResolved := alertCounts(payload.Alerts)
 	var parts []string
 	if numFiring > 0 {
@@ -152,6 +155,22 @@ func metadataFields(labels map[string]string) []*slackapi.TextBlockObject {
 	}
 	add("Team", "@"+team)
 	return fields
+}
+
+// scopeSuffix renders the namespace/pod portion of the title, e.g. "default/web-1",
+// falling back to whichever of the two is present.
+func scopeSuffix(labels map[string]string) string {
+	ns, pod := labels["namespace"], labels["pod"]
+	switch {
+	case ns != "" && pod != "":
+		return ns + "/" + pod
+	case ns != "":
+		return ns
+	case pod != "":
+		return pod
+	default:
+		return ""
+	}
 }
 
 // alertCounts tallies firing/resolved alerts within the group for the header.

@@ -49,8 +49,8 @@ func TestBuildAttachmentFiring(t *testing.T) {
 	}
 
 	header, ok := att.Blocks.BlockSet[0].(*slackapi.HeaderBlock)
-	if !ok || header.Text.Text != "[FIRING: 2] HighCPU" {
-		t.Fatalf("expected header block with firing count and alertname title, got %#v", att.Blocks.BlockSet[0])
+	if !ok || header.Text.Text != "[FIRING: 2] HighCPU (default)" {
+		t.Fatalf("expected header block with firing count, alertname and namespace title, got %#v", att.Blocks.BlockSet[0])
 	}
 
 	if !hasBlockType(att.Blocks.BlockSet, slackapi.MBTAction) {
@@ -65,8 +65,20 @@ func TestBuildAttachmentHeaderCountsMixedStatuses(t *testing.T) {
 	att := BuildAttachment(payload, "https://grafana.infra.emil.de")
 
 	header := att.Blocks.BlockSet[0].(*slackapi.HeaderBlock)
-	if header.Text.Text != "[FIRING: 1, RESOLVED: 1] HighCPU" {
+	if header.Text.Text != "[FIRING: 1, RESOLVED: 1] HighCPU (default)" {
 		t.Fatalf("expected mixed firing/resolved counts in header, got %q", header.Text.Text)
+	}
+}
+
+func TestBuildAttachmentTitleIncludesPod(t *testing.T) {
+	payload := testPayload("firing")
+	payload.CommonLabels["pod"] = "web-1"
+
+	att := BuildAttachment(payload, "https://grafana.infra.emil.de")
+
+	header := att.Blocks.BlockSet[0].(*slackapi.HeaderBlock)
+	if header.Text.Text != "[FIRING: 2] HighCPU (default/web-1)" {
+		t.Fatalf("expected namespace/pod in header, got %q", header.Text.Text)
 	}
 }
 
