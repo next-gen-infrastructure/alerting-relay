@@ -3,6 +3,8 @@ package main
 import (
 	"log/slog"
 	"testing"
+
+	"alerting-relay/internal/slack"
 )
 
 func TestParseLevel(t *testing.T) {
@@ -49,6 +51,56 @@ func TestResolveChannel(t *testing.T) {
 	}
 	if ch, ok := resolveChannel(channels, map[string]string{"cluster": "", "severity": "warning"}); !ok || ch != "C-DEFAULT-NOTIFS" {
 		t.Fatalf("expected empty cluster label -> default notifications channel, got %q, ok=%v", ch, ok)
+	}
+}
+
+func TestResolveChannelsByNameOrID(t *testing.T) {
+	index := channelIndex([]slack.Channel{
+		{Name: "dev-alerts", ID: "C111"},
+		{Name: "dev-notifs", ID: "C222"},
+	})
+
+	channels := map[string]ClusterChannels{
+		"dev":  {Alerting: "dev-alerts", Notifications: "C222"},   // one by name, one already an ID
+		"prod": {Alerting: "#dev-alerts", Notifications: "C222"}, // name with a "#" prefix
+	}
+	if err := resolveChannels(channels, index); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if channels["dev"].Alerting != "C111" || channels["dev"].Notifications != "C222" {
+		t.Fatalf("expected both fields resolved to IDs, got %#v", channels["dev"])
+	}
+	if channels["prod"].Alerting != "C111" {
+		t.Fatalf("expected '#'-prefixed name resolved to ID, got %#v", channels["prod"])
+	}
+}
+
+func TestResolveChannelsErrorsOnUnknownChannel(t *testing.T) {
+	channels := map[string]ClusterChannels{"dev": {Alerting: "does-not-exist"}}
+	if err := resolveChannels(channels, channelIndex(nil)); err == nil {
+		t.Fatalf("expected error for a channel not found by name or ID")
+	}
+}
+
+func TestResolveTeamsByHandleOrID(t *testing.T) {
+	index := teamIndex([]slack.UserGroup{
+		{Handle: "@platform-team", ID: "S111"},
+	})
+
+	resolved := resolveTeams(map[string]string{
+		"platform":  "platform-team",  // by handle (without leading @)
+		"devops":    "@platform-team", // by handle with a leading @
+		"insurance": "S999",           // unknown, dropped with a warning
+	}, index)
+
+	if resolved["platform"] != "S111" {
+		t.Fatalf("expected platform resolved to S111, got %#v", resolved)
+	}
+	if resolved["devops"] != "S111" {
+		t.Fatalf("expected '@'-prefixed handle resolved to S111, got %#v", resolved)
+	}
+	if _, ok := resolved["insurance"]; ok {
+		t.Fatalf("expected unresolved team to be dropped, got %#v", resolved)
 	}
 }
 

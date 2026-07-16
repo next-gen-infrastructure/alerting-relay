@@ -61,6 +61,56 @@ func (c *Client) UpdateRoot(channel, ts string, attachment slackapi.Attachment) 
 	return err
 }
 
+// Channel is a Slack channel's name and ID.
+type Channel struct {
+	Name string
+	ID   string
+}
+
+// ListChannels returns every public and private channel the bot can see,
+// for resolving channel names from config to their Slack IDs at startup.
+func (c *Client) ListChannels() ([]Channel, error) {
+	var out []Channel
+	params := &slackapi.GetConversationsParameters{
+		Types:           []string{"public_channel", "private_channel"},
+		ExcludeArchived: true,
+		Limit:           1000,
+	}
+	for {
+		channels, next, err := c.api.GetConversations(params)
+		if err != nil {
+			return nil, err
+		}
+		for _, ch := range channels {
+			out = append(out, Channel{Name: ch.Name, ID: ch.ID})
+		}
+		if next == "" {
+			return out, nil
+		}
+		params.Cursor = next
+	}
+}
+
+// UserGroup is a Slack user group (subteam)'s handle and ID.
+type UserGroup struct {
+	Handle string
+	ID     string
+}
+
+// ListUserGroups returns every Slack user group, for resolving team names
+// from config to their Slack IDs at startup.
+func (c *Client) ListUserGroups() ([]UserGroup, error) {
+	groups, err := c.api.GetUserGroups()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]UserGroup, len(groups))
+	for i, g := range groups {
+		out[i] = UserGroup{Handle: g.Handle, ID: g.ID}
+	}
+	return out, nil
+}
+
 // BuildAttachment renders one Alertmanager webhook payload into the full
 // root-message Slack attachment: header, a metadata grid, summary, deduped
 // alert details, and the Runbook/Silence/Dashboard action buttons — kept on
@@ -70,7 +120,9 @@ func (c *Client) UpdateRoot(channel, ts string, attachment slackapi.Attachment) 
 // includeCounts adds the current firing/resolved tally to the header —
 // false for the initial post (nothing has changed yet), true for every
 // later edit, so the header visibly tracks state as the group evolves.
-func BuildAttachment(payload webhook.Payload, grafanaURL string, includeCounts bool) slackapi.Attachment {
+// teamMentions maps a team label to the Slack user-group ID that should be
+// pinged for it (see teamMention); nil falls back to plain, non-notifying text.
+func BuildAttachment(payload webhook.Payload, grafanaURL string, teamMentions map[string]string, includeCounts bool) slackapi.Attachment {
 	firing := payload.Status == "firing"
 	labels := payload.CommonLabels
 	ann := payload.CommonAnnotations
@@ -121,7 +173,7 @@ func BuildAttachment(payload webhook.Payload, grafanaURL string, includeCounts b
 		slackapi.NewHeaderBlock(slackapi.NewTextBlockObject(slackapi.PlainTextType, title, true, false)),
 	}
 
-	if fields := metadataFields(labels, firing); len(fields) > 0 {
+	if fields := metadataFields(labels, firing, teamMentions); len(fields) > 0 {
 		blocks = append(blocks, slackapi.NewSectionBlock(nil, fields, nil))
 	}
 
@@ -184,7 +236,7 @@ func BuildThreadUpdate(payload webhook.Payload) slackapi.Attachment {
 
 // metadataFields renders the two-column grid (severity/cluster/namespace/instance/team),
 // same shape as the amazon-prometheus Lambda's buildBlockKit.
-func metadataFields(labels map[string]string, firing bool) []*slackapi.TextBlockObject {
+func metadataFields(labels map[string]string, firing bool, teamMentions map[string]string) []*slackapi.TextBlockObject {
 	var fields []*slackapi.TextBlockObject
 	add := func(label, value string) {
 		if value == "" {
@@ -209,8 +261,20 @@ func metadataFields(labels map[string]string, firing bool) []*slackapi.TextBlock
 	if team == "" {
 		team = "team-devops-oncall"
 	}
-	add("Team", "@"+team)
+	add("Team", teamMention(team, teamMentions))
 	return fields
+}
+
+// teamMention renders a real, notifying Slack mention for team's owning
+// user group when SLACK_TEAMS maps it to a Slack user-group ID, falling
+// back to plain "@team" text otherwise. Plain "@word" text in Block Kit
+// mrkdwn is never converted to a mention by Slack's API — it only pings
+// when written as the `<!subteam^ID>` syntax.
+func teamMention(team string, teamMentions map[string]string) string {
+	if id := teamMentions[team]; id != "" {
+		return fmt.Sprintf("<!subteam^%s>", id)
+	}
+	return "@" + team
 }
 
 // scopeSuffix renders the namespace/pod portion of the title, e.g. "default/web-1",

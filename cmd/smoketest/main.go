@@ -40,7 +40,7 @@ func main() {
 	step1.Alerts = []webhook.Alert{
 		{Status: "firing", Annotations: map[string]string{"description": "instance-1 down"}},
 	}
-	ts, err := client.PostRoot(channel, slack.BuildAttachment(step1, grafanaURL, false))
+	ts, err := client.PostRoot(channel, slack.BuildAttachment(step1, grafanaURL, nil, false))
 	if err != nil {
 		fmt.Println("post root error:", err)
 		return
@@ -55,7 +55,7 @@ func main() {
 		{Status: "firing", Annotations: map[string]string{"description": "instance-1 down"}},
 		{Status: "firing", Annotations: map[string]string{"description": "instance-2 down"}},
 	}
-	if err := client.UpdateRoot(channel, ts, slack.BuildAttachment(step2, grafanaURL, true)); err != nil {
+	if err := client.UpdateRoot(channel, ts, slack.BuildAttachment(step2, grafanaURL, nil, true)); err != nil {
 		fmt.Println("update root error:", err)
 		return
 	}
@@ -73,7 +73,7 @@ func main() {
 		{Status: "resolved", Annotations: map[string]string{"description": "instance-1 down"}},
 		{Status: "firing", Annotations: map[string]string{"description": "instance-2 down"}},
 	}
-	if err := client.UpdateRoot(channel, ts, slack.BuildAttachment(step3, grafanaURL, true)); err != nil {
+	if err := client.UpdateRoot(channel, ts, slack.BuildAttachment(step3, grafanaURL, nil, true)); err != nil {
 		fmt.Println("update root error:", err)
 		return
 	}
@@ -91,7 +91,7 @@ func main() {
 		{Status: "resolved", Annotations: map[string]string{"description": "instance-1 down"}},
 		{Status: "resolved", Annotations: map[string]string{"description": "instance-2 down"}},
 	}
-	if err := client.UpdateRoot(channel, ts, slack.BuildAttachment(step4, grafanaURL, true)); err != nil {
+	if err := client.UpdateRoot(channel, ts, slack.BuildAttachment(step4, grafanaURL, nil, true)); err != nil {
 		fmt.Println("update root error:", err)
 		return
 	}

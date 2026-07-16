@@ -43,7 +43,7 @@ func hasBlockType(blocks []slackapi.Block, t slackapi.MessageBlockType) bool {
 }
 
 func TestBuildAttachmentFiring(t *testing.T) {
-	att := BuildAttachment(testPayload("firing"), "https://grafana.infra.emil.de", true)
+	att := BuildAttachment(testPayload("firing"), "https://grafana.infra.emil.de", nil, true)
 
 	if att.Color != severityColors["critical"] {
 		t.Fatalf("expected critical severity color, got %q", att.Color)
@@ -64,7 +64,7 @@ func TestBuildAttachmentFiring(t *testing.T) {
 }
 
 func TestBuildAttachmentInitialPostOmitsCounts(t *testing.T) {
-	att := BuildAttachment(testPayload("firing"), "https://grafana.infra.emil.de", false)
+	att := BuildAttachment(testPayload("firing"), "https://grafana.infra.emil.de", nil, false)
 
 	header := att.Blocks.BlockSet[0].(*slackapi.HeaderBlock)
 	if header.Text.Text != "🔴 HighCPU (default)" {
@@ -90,7 +90,7 @@ func TestBuildAttachmentHeaderCountsMixedStatuses(t *testing.T) {
 	payload := testPayload("firing")
 	payload.Alerts[0].Status = "resolved"
 
-	att := BuildAttachment(payload, "https://grafana.infra.emil.de", true)
+	att := BuildAttachment(payload, "https://grafana.infra.emil.de", nil, true)
 
 	header := att.Blocks.BlockSet[0].(*slackapi.HeaderBlock)
 	if header.Text.Text != "🔴 [FIRING: 1, RESOLVED: 1] HighCPU (default)" {
@@ -102,7 +102,7 @@ func TestBuildAttachmentTitleIncludesPod(t *testing.T) {
 	payload := testPayload("firing")
 	payload.CommonLabels["pod"] = "web-1"
 
-	att := BuildAttachment(payload, "https://grafana.infra.emil.de", true)
+	att := BuildAttachment(payload, "https://grafana.infra.emil.de", nil, true)
 
 	header := att.Blocks.BlockSet[0].(*slackapi.HeaderBlock)
 	if header.Text.Text != "🔴 [FIRING: 2] HighCPU (default/web-1)" {
@@ -111,7 +111,7 @@ func TestBuildAttachmentTitleIncludesPod(t *testing.T) {
 }
 
 func TestBuildAttachmentResolvedKeepsActionsAndGoodColor(t *testing.T) {
-	att := BuildAttachment(testPayload("resolved"), "https://grafana.infra.emil.de", true)
+	att := BuildAttachment(testPayload("resolved"), "https://grafana.infra.emil.de", nil, true)
 
 	if att.Color != resolvedColor {
 		t.Fatalf("expected resolved color %q, got %q", resolvedColor, att.Color)
@@ -125,7 +125,7 @@ func TestBuildAttachmentResolvedKeepsActionsAndGoodColor(t *testing.T) {
 		t.Fatalf("expected resolved header to use the resolved checkmark, got %q", header.Text.Text)
 	}
 
-	fields := metadataFields(testPayload("resolved").CommonLabels, false)
+	fields := metadataFields(testPayload("resolved").CommonLabels, false, nil)
 	for _, f := range fields {
 		if strings.HasPrefix(f.Text, "*Severity*") {
 			t.Fatalf("resolved messages must not show a severity field, got %#v", fields)
@@ -134,20 +134,34 @@ func TestBuildAttachmentResolvedKeepsActionsAndGoodColor(t *testing.T) {
 }
 
 func TestMetadataFieldsDefaultsTeamToOncall(t *testing.T) {
-	fields := metadataFields(map[string]string{}, true)
+	fields := metadataFields(map[string]string{}, true, nil)
 	if len(fields) != 1 || fields[0].Text != "*Team*\n@team-devops-oncall" {
 		t.Fatalf("expected default oncall team field, got %#v", fields)
 	}
 
-	fields = metadataFields(map[string]string{"team": "platform"}, true)
+	fields = metadataFields(map[string]string{"team": "platform"}, true, nil)
 	if len(fields) != 1 || fields[0].Text != "*Team*\n@platform" {
 		t.Fatalf("expected team label from labels, got %#v", fields)
 	}
 }
 
+func TestMetadataFieldsUsesRealMentionWhenTeamMapped(t *testing.T) {
+	teamMentions := map[string]string{"platform": "S0123ABC"}
+
+	fields := metadataFields(map[string]string{"team": "platform"}, true, teamMentions)
+	if len(fields) != 1 || fields[0].Text != "*Team*\n<!subteam^S0123ABC>" {
+		t.Fatalf("expected real subteam mention for mapped team, got %#v", fields)
+	}
+
+	fields = metadataFields(map[string]string{"team": "insurance"}, true, teamMentions)
+	if len(fields) != 1 || fields[0].Text != "*Team*\n@insurance" {
+		t.Fatalf("expected plain text fallback for unmapped team, got %#v", fields)
+	}
+}
+
 func TestBuildAttachmentTitleFallsBackToReceiver(t *testing.T) {
 	payload := webhook.Payload{Receiver: "team-slack", Status: "firing"}
-	att := BuildAttachment(payload, "", false)
+	att := BuildAttachment(payload, "", nil, false)
 
 	header := att.Blocks.BlockSet[0].(*slackapi.HeaderBlock)
 	if header.Text.Text != "🔵 team-slack" {

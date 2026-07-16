@@ -32,6 +32,7 @@ type Config struct {
 	DatabaseURL   string
 	SlackToken    string
 	SlackChannels map[string]ClusterChannels // cluster label -> channels
+	SlackTeams    map[string]string          // team label -> Slack user-group ID, for real pings
 	WebhookToken  string
 	GrafanaURL    string // default Grafana base URL, overridable per cluster
 	Addr          string
@@ -45,10 +46,18 @@ func loadConfig() Config {
 			os.Exit(1)
 		}
 	}
+	var teams map[string]string
+	if raw := os.Getenv("SLACK_TEAMS"); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &teams); err != nil {
+			slog.Error("invalid SLACK_TEAMS", "err", err)
+			os.Exit(1)
+		}
+	}
 	return Config{
 		DatabaseURL:   os.Getenv("DATABASE_URL"),
 		SlackToken:    os.Getenv("SLACK_BOT_TOKEN"),
 		SlackChannels: channels,
+		SlackTeams:    teams,
 		WebhookToken:  os.Getenv("WEBHOOK_TOKEN"),
 		GrafanaURL:    os.Getenv("GRAFANA_URL"),
 		Addr:          ":8080",
@@ -119,6 +128,68 @@ func resolveGrafanaURL(channels map[string]ClusterChannels, defaultURL string, l
 	return defaultURL
 }
 
+// channelIndex builds a name-or-ID -> ID lookup from the workspace's channel
+// list, so SLACK_CHANNELS can reference a channel by either.
+func channelIndex(channels []slack.Channel) map[string]string {
+	index := make(map[string]string, len(channels)*2)
+	for _, c := range channels {
+		index[c.Name] = c.ID
+		index[c.ID] = c.ID
+	}
+	return index
+}
+
+// resolveChannels replaces every non-empty Alerting/Notifications reference
+// in channels with its resolved Slack ID (in place). A reference that
+// matches neither a channel name nor an ID is a hard error: without a real
+// channel there's nowhere to post, so this fails startup instead of
+// silently dropping alerts later.
+func resolveChannels(channels map[string]ClusterChannels, index map[string]string) error {
+	for cluster, cc := range channels {
+		for _, field := range [...]*string{&cc.Alerting, &cc.Notifications} {
+			if *field == "" {
+				continue
+			}
+			name := strings.TrimPrefix(*field, "#")
+			id, ok := index[name]
+			if !ok {
+				return fmt.Errorf("cluster %q: slack channel %q not found (by name or ID)", cluster, *field)
+			}
+			*field = id
+		}
+		channels[cluster] = cc
+	}
+	return nil
+}
+
+// teamIndex builds a handle-or-ID -> ID lookup from the workspace's user
+// groups, so SLACK_TEAMS can reference a team by its Slack handle or ID.
+func teamIndex(groups []slack.UserGroup) map[string]string {
+	index := make(map[string]string, len(groups)*2)
+	for _, g := range groups {
+		index[strings.TrimPrefix(g.Handle, "@")] = g.ID
+		index[g.ID] = g.ID
+	}
+	return index
+}
+
+// resolveTeams resolves each SLACK_TEAMS entry to its Slack user-group ID.
+// An entry that isn't found is dropped (logged as a warning) rather than
+// failing startup — BuildAttachment already falls back to a plain "@team"
+// mention for any label missing from the returned map.
+func resolveTeams(teams map[string]string, index map[string]string) map[string]string {
+	resolved := make(map[string]string, len(teams))
+	for label, name := range teams {
+		id, ok := index[strings.TrimPrefix(name, "@")]
+		if !ok {
+			slog.Warn("slack team not found, falling back to plain mention", "team_label", label, "configured_name", name)
+			continue
+		}
+		resolved[label] = id
+	}
+	return resolved
+}
+
 type relay struct {
 	cfg   Config
 	store *store.Store
@@ -162,7 +233,7 @@ func (rl *relay) handleGroup(payload webhook.Payload) error {
 		if !ok {
 			return fmt.Errorf("no slack channel configured for cluster %q", payload.CommonLabels["cluster"])
 		}
-		ts, err := rl.slack.PostRoot(channel, slack.BuildAttachment(payload, grafanaURL, false))
+		ts, err := rl.slack.PostRoot(channel, slack.BuildAttachment(payload, grafanaURL, rl.cfg.SlackTeams, false))
 		if err != nil {
 			return err
 		}
@@ -177,7 +248,7 @@ func (rl *relay) handleGroup(payload webhook.Payload) error {
 
 	// Alert set changed since we last posted: keep the root's header current
 	// and drop a lightweight instance-list note in its thread.
-	if err := rl.slack.UpdateRoot(existing.Channel, existing.MessageTS, slack.BuildAttachment(payload, grafanaURL, true)); err != nil {
+	if err := rl.slack.UpdateRoot(existing.Channel, existing.MessageTS, slack.BuildAttachment(payload, grafanaURL, rl.cfg.SlackTeams, true)); err != nil {
 		return err
 	}
 	if err := rl.slack.PostThreadReply(existing.Channel, existing.MessageTS, slack.BuildThreadUpdate(payload)); err != nil {
@@ -217,7 +288,31 @@ func main() {
 		os.Exit(1)
 	}
 
-	rl := &relay{cfg: cfg, store: st, slack: slack.New(cfg.SlackToken)}
+	slackClient := slack.New(cfg.SlackToken)
+
+	if len(cfg.SlackChannels) > 0 {
+		channels, err := slackClient.ListChannels()
+		if err != nil {
+			slog.Error("list slack channels", "err", err)
+			os.Exit(1)
+		}
+		if err := resolveChannels(cfg.SlackChannels, channelIndex(channels)); err != nil {
+			slog.Error("resolve SLACK_CHANNELS", "err", err)
+			os.Exit(1)
+		}
+	}
+
+	if len(cfg.SlackTeams) > 0 {
+		groups, err := slackClient.ListUserGroups()
+		if err != nil {
+			slog.Warn("list slack user groups, falling back to plain team mentions", "err", err)
+			cfg.SlackTeams = map[string]string{}
+		} else {
+			cfg.SlackTeams = resolveTeams(cfg.SlackTeams, teamIndex(groups))
+		}
+	}
+
+	rl := &relay{cfg: cfg, store: st, slack: slackClient}
 	rl.startCleanupLoop()
 
 	mux := http.NewServeMux()

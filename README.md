@@ -22,7 +22,8 @@ Set via environment variables:
 |------------------|----------------------------------------------------------------|
 | `DATABASE_URL`   | Postgres DSN                                                    |
 | `SLACK_BOT_TOKEN`| Slack bot token                                                 |
-| `SLACK_CHANNELS` | JSON mapping cluster label -> `{"alerting": "...", "notifications": "..."}`. A `"default"` entry is used when an alert has no `cluster` label. |
+| `SLACK_CHANNELS` | JSON mapping cluster label -> `{"alerting": "...", "notifications": "..."}`. A `"default"` entry is used when an alert has no `cluster` label. Values may be a channel name or ID — names are resolved to IDs at startup (requires the `channels:read`/`groups:read` bot scopes); an unresolvable channel fails startup. |
+| `SLACK_TEAMS`    | JSON mapping `team` label -> Slack user-group handle or ID, e.g. `{"platform": "platform-team"}`. Resolved to the group's ID at startup (requires `usergroups:read`) to render a real, notifying `<!subteam^ID>` mention; an unresolvable team logs a warning and falls back to plain `@team` text. |
 | `WEBHOOK_TOKEN`  | Bearer token required on incoming `/webhook` requests           |
 | `LOG_FORMAT`     | `text` (default) or `json`                                      |
 | `LOG_LEVEL`      | `debug`, `info` (default), `warn`, or `error`                    |
@@ -48,7 +49,7 @@ helm install alerting-relay oci://ghcr.io/next-gen-infrastructure/charts/alertin
 
 `image.repository` defaults to `ghcr.io/next-gen-infrastructure/alerting-relay` (the image published by `docker-publish.yml`); override `image.tag` to pin a specific version instead of `latest`.
 
-By default the chart references a pre-existing Secret and ConfigMap (names configurable via `secret.name`/`configMap.name`, default `alerting-relay`) providing the app's env vars (`DATABASE_URL`, `SLACK_BOT_TOKEN`, `WEBHOOK_TOKEN`, `SLACK_CHANNELS`) — bring your own however you manage config. Or set `secret.create`/`configMap.create` to `true` with `secret.content`/`configMap.content` to have the chart create them for you. See `charts/alerting-relay/values.yaml` for the full set of configurable values (replica count, image, service port, ingress class/annotations, resources).
+By default the chart references a pre-existing Secret and ConfigMap (names configurable via `secret.name`/`configMap.name`, default `alerting-relay`) providing the app's env vars (`DATABASE_URL`, `SLACK_BOT_TOKEN`, `WEBHOOK_TOKEN`, `SLACK_CHANNELS`, `SLACK_TEAMS`) — bring your own however you manage config. Or set `secret.create`/`configMap.create` to `true` with `secret.content`/`configMap.content` to have the chart create them for you. See `charts/alerting-relay/values.yaml` for the full set of configurable values (replica count, image, service port, ingress class/annotations, resources).
 
 ## License
 
