@@ -225,9 +225,9 @@ func (rl *relay) handleGroup(payload webhook.Payload) error {
 
 	grafanaURL := resolveGrafanaURL(rl.cfg.SlackChannels, rl.cfg.GrafanaURL, payload.CommonLabels)
 
-	if existing == nil {
+	if existing == nil || existing.Status == "resolved" {
 		if payload.Status != "firing" {
-			return nil // nothing to resolve, never saw it firing
+			return nil // nothing to resolve, never saw it firing (or already resolved)
 		}
 		channel, ok := resolveChannel(rl.cfg.SlackChannels, payload.CommonLabels)
 		if !ok {

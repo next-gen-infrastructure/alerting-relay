@@ -72,11 +72,18 @@ func (s *Store) Get(receiver, groupKey string) (*AlertGroup, error) {
 	return &ag, nil
 }
 
-// Create records a brand-new group's root Slack message.
+// Create records a group's new root Slack message, overwriting any prior
+// (resolved) row for the same group so a fresh occurrence starts a new thread.
 func (s *Store) Create(ag AlertGroup) error {
 	_, err := s.db.Exec(
 		`INSERT INTO alert_groups (receiver, group_key, channel, message_ts, status)
-		 VALUES ($1, $2, $3, $4, $5)`,
+		 VALUES ($1, $2, $3, $4, $5)
+		 ON CONFLICT (receiver, group_key) DO UPDATE
+		 SET channel = EXCLUDED.channel,
+		     message_ts = EXCLUDED.message_ts,
+		     status = EXCLUDED.status,
+		     resolved_at = NULL,
+		     updated_at = now()`,
 		ag.Receiver, ag.GroupKey, ag.Channel, ag.MessageTS, ag.Status,
 	)
 	return err
