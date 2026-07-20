@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.8.0...v0.8.1) (2026-07-20)
+
+
+### Bug Fixes
+
+* start a new Slack thread when a resolved alert group fires again ([a2ec71e](https://github.com/next-gen-infrastructure/alerting-relay/commit/a2ec71ea614b1c0743b27e475a111c80a482af4a))
+
 ## [0.8.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.7.1...v0.8.0) (2026-07-16)
 
 
