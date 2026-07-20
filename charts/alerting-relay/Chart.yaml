@@ -2,8 +2,8 @@ apiVersion: v2
 name: alerting-relay
 description: Aggregates Alertmanager alerts into threaded, resolve-updating Slack messages
 type: application
-version: 0.8.0
-appVersion: 0.8.0
+version: 0.8.1
+appVersion: 0.8.1
 home: https://github.com/next-gen-infrastructure/alerting-relay
 sources:
   - https://github.com/next-gen-infrastructure/alerting-relay
