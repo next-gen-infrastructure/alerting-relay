@@ -20,8 +20,8 @@ Set via environment variables:
 
 | Variable         | Description                                                  |
 |------------------|----------------------------------------------------------------|
-| `DATABASE_URL`   | Postgres DSN                                                    |
-| `SLACK_BOT_TOKEN`| Slack bot token                                                 |
+| `DATABASE_URL`   | Postgres DSN, or `sqlite://path/to/file.db` (`sqlite://:memory:` for in-memory) |
+| `SLACK_BOT_TOKEN`| Slack bot token. Requires the `chat:write` scope; add `channels:read`/`groups:read` and/or `usergroups:read` if `SLACK_CHANNELS`/`SLACK_TEAMS` use names/handles instead of IDs (see below) |
 | `SLACK_CHANNELS` | JSON mapping cluster label -> `{"alerting": "...", "notifications": "..."}`. A `"default"` entry is used when an alert has no `cluster` label. Values may be a channel name or ID — names are resolved to IDs at startup (requires the `channels:read`/`groups:read` bot scopes); an unresolvable channel fails startup. |
 | `SLACK_TEAMS`    | JSON mapping `team` label -> Slack user-group handle or ID, e.g. `{"platform": "platform-team"}`. Resolved to the group's ID at startup (requires `usergroups:read`) to render a real, notifying `<!subteam^ID>` mention; an unresolvable team logs a warning and falls back to plain `@team` text. |
 | `WEBHOOK_TOKEN`  | Bearer token required on incoming `/webhook` requests           |
