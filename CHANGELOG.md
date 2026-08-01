@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.2](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.9.1...v0.9.2) (2026-08-01)
+
+
+### Bug Fixes
+
+* pin SQLite connection pool to one connection ([896289e](https://github.com/next-gen-infrastructure/alerting-relay/commit/896289e7bce0b4d693b6d88dac6d7053c1dd6554))
+* pin SQLite connection pool to one connection ([bb90266](https://github.com/next-gen-infrastructure/alerting-relay/commit/bb902667f192e8fc6ed93a85401a8bd76cc142ae))
+
 ## [0.9.1](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.9.0...v0.9.1) (2026-08-01)
 
 
