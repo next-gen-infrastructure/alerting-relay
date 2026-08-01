@@ -41,6 +41,12 @@ func New(dsn string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	if sqlite {
+		// modernc.org/sqlite gives each pooled connection its own private
+		// database for in-memory DSNs, so a second connection can't see
+		// tables migrated on the first. One connection avoids that.
+		db.SetMaxOpenConns(1)
+	}
 	if err := db.Ping(); err != nil {
 		return nil, err
 	}
