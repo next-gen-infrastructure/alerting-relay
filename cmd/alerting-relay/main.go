@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -126,6 +127,29 @@ func resolveGrafanaURL(channels map[string]ClusterChannels, defaultURL string, l
 		return cluster.GrafanaURL
 	}
 	return defaultURL
+}
+
+// slackChannelIDPattern matches a raw Slack conversation ID (channels,
+// private channels, and DMs all share this C/G/D + alphanumeric shape), so
+// config that already names channels by ID can skip the channels:read /
+// groups:read scoped conversations.list call entirely.
+var slackChannelIDPattern = regexp.MustCompile(`^[CGD][A-Z0-9]{8,}$`)
+
+// allChannelsAreIDs reports whether every configured Alerting/Notifications
+// reference is already a raw Slack channel ID, meaning no name lookup (and
+// therefore no ListChannels call) is needed.
+func allChannelsAreIDs(channels map[string]ClusterChannels) bool {
+	for _, cc := range channels {
+		for _, field := range [...]string{cc.Alerting, cc.Notifications} {
+			if field == "" {
+				continue
+			}
+			if !slackChannelIDPattern.MatchString(field) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // channelIndex builds a name-or-ID -> ID lookup from the workspace's channel
@@ -290,7 +314,7 @@ func main() {
 
 	slackClient := slack.New(cfg.SlackToken)
 
-	if len(cfg.SlackChannels) > 0 {
+	if len(cfg.SlackChannels) > 0 && !allChannelsAreIDs(cfg.SlackChannels) {
 		channels, err := slackClient.ListChannels()
 		if err != nil {
 			slog.Error("list slack channels", "err", err)
