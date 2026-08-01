@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.9.0...v0.9.1) (2026-08-01)
+
+
+### Bug Fixes
+
+* skip Slack channel list lookup when SLACK_CHANNELS is already IDs ([0dab69e](https://github.com/next-gen-infrastructure/alerting-relay/commit/0dab69eef56a9c4520952a880acabe1b464ebf04))
+
 ## [0.9.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.8.0...v0.9.0) (2026-07-29)
 
 
