@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.8.0...v0.9.0) (2026-07-29)
+
+
+### Features
+
+* support SQLite as an alternative to Postgres ([87978fd](https://github.com/next-gen-infrastructure/alerting-relay/commit/87978fd039d84ca6b08c1b063cbee1f2e79f80c9))
+
+
+### Bug Fixes
+
+* start a new Slack thread when a resolved alert group fires again ([a2ec71e](https://github.com/next-gen-infrastructure/alerting-relay/commit/a2ec71ea614b1c0743b27e475a111c80a482af4a))
+
 ## [0.8.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.7.1...v0.8.0) (2026-07-16)
 
 
