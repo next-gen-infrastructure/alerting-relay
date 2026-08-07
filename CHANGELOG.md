@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.9.2...v0.10.0) (2026-08-07)
+
+
+### Features
+
+* **slack:** fall back to app label for header scope suffix ([012b420](https://github.com/next-gen-infrastructure/alerting-relay/commit/012b42069b7feec389a61589b8ac33e7bf5edbde))
+* **slack:** fall back to app label for header scope suffix ([b9d31f6](https://github.com/next-gen-infrastructure/alerting-relay/commit/b9d31f63c1053d72cd9fbc75c2fd47c9a03f8f9b))
+
 ## [0.9.2](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.9.1...v0.9.2) (2026-08-01)
 
 
