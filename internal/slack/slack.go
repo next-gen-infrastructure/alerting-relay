@@ -234,7 +234,7 @@ func BuildThreadUpdate(payload webhook.Payload) slackapi.Attachment {
 	return slackapi.Attachment{Color: color, Fallback: strings.Join(parts, ", "), Blocks: slackapi.Blocks{BlockSet: blocks}}
 }
 
-// metadataFields renders the two-column grid (severity/cluster/namespace/instance/team),
+// metadataFields renders the two-column grid (severity/cluster/namespace/app/instance/team),
 // same shape as the amazon-prometheus Lambda's buildBlockKit.
 func metadataFields(labels map[string]string, firing bool, teamMentions map[string]string) []*slackapi.TextBlockObject {
 	var fields []*slackapi.TextBlockObject
@@ -256,6 +256,7 @@ func metadataFields(labels map[string]string, firing bool, teamMentions map[stri
 		}
 	}
 	add("Namespace", labels["namespace"])
+	add("App", labels["app"])
 	add("Instance", labels["instance"])
 	team := labels["team"]
 	if team == "" {
@@ -278,9 +279,15 @@ func teamMention(team string, teamMentions map[string]string) string {
 }
 
 // scopeSuffix renders the namespace/pod portion of the title, e.g. "default/web-1",
-// falling back to whichever of the two is present.
+// falling back to whichever of the two is present. pod falls back to app for
+// alert sources (e.g. Loki log-based alerts) that identify by app rather than
+// pod; instance is deliberately not used here since it's often a raw
+// IP/hostname on metric alerts and would clutter the title.
 func scopeSuffix(labels map[string]string) string {
 	ns, pod := labels["namespace"], labels["pod"]
+	if pod == "" {
+		pod = labels["app"]
+	}
 	switch {
 	case ns != "" && pod != "":
 		return ns + "/" + pod

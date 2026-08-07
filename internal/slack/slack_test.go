@@ -110,6 +110,31 @@ func TestBuildAttachmentTitleIncludesPod(t *testing.T) {
 	}
 }
 
+func TestBuildAttachmentTitleFallsBackToAppWhenNoPod(t *testing.T) {
+	payload := testPayload("firing")
+	payload.CommonLabels["app"] = "osint-scraper"
+
+	att := BuildAttachment(payload, "https://grafana.infra.emil.de", nil, true)
+
+	header := att.Blocks.BlockSet[0].(*slackapi.HeaderBlock)
+	if header.Text.Text != "🔴 [FIRING: 2] HighCPU (default/osint-scraper)" {
+		t.Fatalf("expected namespace/app in header when pod is absent, got %q", header.Text.Text)
+	}
+}
+
+func TestBuildAttachmentTitlePrefersPodOverApp(t *testing.T) {
+	payload := testPayload("firing")
+	payload.CommonLabels["pod"] = "web-1"
+	payload.CommonLabels["app"] = "osint-scraper"
+
+	att := BuildAttachment(payload, "https://grafana.infra.emil.de", nil, true)
+
+	header := att.Blocks.BlockSet[0].(*slackapi.HeaderBlock)
+	if header.Text.Text != "🔴 [FIRING: 2] HighCPU (default/web-1)" {
+		t.Fatalf("expected pod to take precedence over app in header, got %q", header.Text.Text)
+	}
+}
+
 func TestBuildAttachmentResolvedKeepsActionsAndGoodColor(t *testing.T) {
 	att := BuildAttachment(testPayload("resolved"), "https://grafana.infra.emil.de", nil, true)
 
