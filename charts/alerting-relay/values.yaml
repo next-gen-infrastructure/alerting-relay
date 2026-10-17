@@ -63,3 +63,11 @@ resources: {}
 nodeSelector: {}
 tolerations: []
 affinity: {}
+
+# Requires the prometheus-operator CRDs.
+podMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  # Extra labels, e.g. `release: kube-prometheus-stack` for the operator's selector.
+  labels: {}
