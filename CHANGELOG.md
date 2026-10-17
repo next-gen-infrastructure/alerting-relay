@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.10.0...v0.11.0) (2026-10-17)
+
+
+### Features
+
+* **metrics:** expose prometheus metrics on /metrics and add PodMonitor ([f1352f7](https://github.com/next-gen-infrastructure/alerting-relay/commit/f1352f7d9ebb6b97f83b9622bc46897be4fb565c))
+
+
+### Bug Fixes
+
+* gitignore ([826a04d](https://github.com/next-gen-infrastructure/alerting-relay/commit/826a04d72cc3d3548530fe324baa7e6237f3be79))
+
 ## [0.10.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.9.2...v0.10.0) (2026-08-07)
 
 
