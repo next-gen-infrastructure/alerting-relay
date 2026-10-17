@@ -16,6 +16,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"alerting-relay/internal/slack"
 	"alerting-relay/internal/store"
 	"alerting-relay/internal/webhook"
@@ -214,6 +218,18 @@ func resolveTeams(teams map[string]string, index map[string]string) map[string]s
 	return resolved
 }
 
+var (
+	webhookRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "alerting_relay_webhook_requests_total",
+		Help: "Webhook requests by HTTP status code.",
+	}, []string{"code"})
+	webhookDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "alerting_relay_webhook_duration_seconds",
+		Help:    "Webhook request latency.",
+		Buckets: prometheus.DefBuckets,
+	}, []string{"code"})
+)
+
 type relay struct {
 	cfg   Config
 	store *store.Store
@@ -340,7 +356,9 @@ func main() {
 	rl.startCleanupLoop()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/webhook", rl.handleWebhook)
+	mux.Handle("/webhook", promhttp.InstrumentHandlerDuration(webhookDuration,
+		promhttp.InstrumentHandlerCounter(webhookRequests, http.HandlerFunc(rl.handleWebhook))))
+	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
