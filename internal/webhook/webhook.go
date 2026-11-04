@@ -4,6 +4,7 @@ package webhook
 // Alert mirrors Alertmanager's webhook alert shape (subset used here).
 type Alert struct {
 	Status      string            `json:"status"`
+	Fingerprint string            `json:"fingerprint"`
 	Labels      map[string]string `json:"labels"`
 	Annotations map[string]string `json:"annotations"`
 }

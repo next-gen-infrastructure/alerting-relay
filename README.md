@@ -24,6 +24,8 @@ Set via environment variables:
 | `SLACK_BOT_TOKEN`| Slack bot token. Requires the `chat:write` scope; add `channels:read`/`groups:read` and/or `usergroups:read` if `SLACK_CHANNELS`/`SLACK_TEAMS` use names/handles instead of IDs (see below) |
 | `SLACK_CHANNELS` | JSON mapping cluster label -> `{"alerting": "...", "notifications": "..."}`. A `"default"` entry is used when an alert has no `cluster` label. Values may be a channel name or ID — names are resolved to IDs at startup (requires the `channels:read`/`groups:read` bot scopes); an unresolvable channel fails startup. |
 | `SLACK_TEAMS`    | JSON mapping `team` label -> Slack user-group handle or ID, e.g. `{"platform": "platform-team"}`. Resolved to the group's ID at startup (requires `usergroups:read`) to render a real, notifying `<!subteam^ID>` mention; an unresolvable team logs a warning and falls back to plain `@team` text. |
+| `ALERTMANAGER_URL` | Optional Alertmanager base URL. When set, inhibited alerts in a group's scope (cluster/namespace/workload, or alertname without a workload) are fetched from `/api/v2/alerts` and posted as one thread comment each |
+| `ALERTMANAGER_USERNAME` / `ALERTMANAGER_PASSWORD` | Optional basic-auth credentials for `ALERTMANAGER_URL` |
 | `WEBHOOK_TOKEN`  | Bearer token required on incoming `/webhook` requests           |
 | `LOG_FORMAT`     | `text` (default) or `json`                                      |
 | `LOG_LEVEL`      | `debug`, `info` (default), `warn`, or `error`                    |
