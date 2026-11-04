@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.11.0...v0.12.0) (2026-11-04)
+
+
+### Features
+
+* post inhibited alerts in thread and use workload in header ([125e894](https://github.com/next-gen-infrastructure/alerting-relay/commit/125e89435bbf0e8b7aaff458f9d9432ebc720f8a))
+* post inhibited alerts in thread and use workload in header ([b2655c5](https://github.com/next-gen-infrastructure/alerting-relay/commit/b2655c5b50bb19202b56100521da8709bb2109ee))
+
 ## [0.11.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.10.0...v0.11.0) (2026-10-17)
 
 
