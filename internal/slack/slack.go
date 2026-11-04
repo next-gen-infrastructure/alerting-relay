@@ -4,6 +4,7 @@ package slack
 
 import (
 	"fmt"
+	"maps"
 	"net/url"
 	"regexp"
 	"sort"
@@ -126,6 +127,13 @@ func BuildAttachment(payload webhook.Payload, grafanaURL string, teamMentions ma
 	firing := payload.Status == "firing"
 	labels := payload.CommonLabels
 	ann := payload.CommonAnnotations
+	if labels["severity"] == "" { // mixed-severity group: show the worst one
+		labels = maps.Clone(labels)
+		if labels == nil {
+			labels = map[string]string{}
+		}
+		labels["severity"] = topSeverity(payload.Alerts)
+	}
 
 	color := resolvedColor
 	if firing {
@@ -135,10 +143,7 @@ func BuildAttachment(payload webhook.Payload, grafanaURL string, teamMentions ma
 		}
 	}
 
-	title := labels["alertname"]
-	if title == "" {
-		title = payload.Receiver
-	}
+	title := headline(payload)
 	if scope := scopeSuffix(labels); scope != "" {
 		title = fmt.Sprintf("%s (%s)", title, scope)
 	}
@@ -278,13 +283,72 @@ func teamMention(team string, teamMentions map[string]string) string {
 	return "@" + team
 }
 
+var severityRank = map[string]int{"critical": 4, "high": 3, "warning": 2, "info": 1}
+
+func topSeverity(alerts []webhook.Alert) (top string) {
+	for _, a := range alerts {
+		if s := a.Labels["severity"]; severityRank[s] > severityRank[top] {
+			top = s
+		}
+	}
+	return top
+}
+
+// headline is the group's alertname, or — when the group spans several
+// alertnames (workload groups) — the highest-severity one plus "+N more".
+func headline(payload webhook.Payload) string {
+	if name := payload.CommonLabels["alertname"]; name != "" {
+		return name
+	}
+	best, names := "", map[string]bool{}
+	bestRank := -1
+	for _, a := range payload.Alerts {
+		n := a.Labels["alertname"]
+		if n == "" {
+			continue
+		}
+		names[n] = true
+		if r := severityRank[a.Labels["severity"]]; r > bestRank || (r == bestRank && n < best) {
+			best, bestRank = n, r
+		}
+	}
+	switch {
+	case best == "":
+		return payload.Receiver
+	case len(names) > 1:
+		return fmt.Sprintf("%s +%d more", best, len(names)-1)
+	}
+	return best
+}
+
+// BuildInhibitedReply renders one thread comment for a single inhibited alert.
+func BuildInhibitedReply(a webhook.Alert) slackapi.Attachment {
+	text := a.Annotations["description"]
+	if text == "" {
+		text = a.Annotations["message"]
+	}
+	msg := fmt.Sprintf(":no_bell: *Inhibited* — %s", a.Labels["alertname"])
+	if text != "" {
+		msg += "\n" + text
+	}
+	return slackapi.Attachment{
+		Color:    "#9E9E9E",
+		Fallback: "Inhibited: " + a.Labels["alertname"],
+		Blocks: slackapi.Blocks{BlockSet: []slackapi.Block{slackapi.NewSectionBlock(
+			slackapi.NewTextBlockObject(slackapi.MarkdownType, msg, false, false), nil, nil)}},
+	}
+}
+
 // scopeSuffix renders the namespace/pod portion of the title, e.g. "default/web-1",
 // falling back to whichever of the two is present. pod falls back to app for
 // alert sources (e.g. Loki log-based alerts) that identify by app rather than
 // pod; instance is deliberately not used here since it's often a raw
 // IP/hostname on metric alerts and would clutter the title.
 func scopeSuffix(labels map[string]string) string {
-	ns, pod := labels["namespace"], labels["pod"]
+	ns, pod := labels["namespace"], labels["workload"]
+	if pod == "" {
+		pod = labels["pod"]
+	}
 	if pod == "" {
 		pod = labels["app"]
 	}
@@ -313,7 +377,7 @@ func alertCounts(alerts []webhook.Alert) (firing, resolved int) {
 	return firing, resolved
 }
 
-// alertDetails collects each alert's description/message, de-duplicated per
+// alertDetails collects each alert's description/message (summary as fallback), de-duplicated per
 // status and sorted so re-renders (thread replies) are stable/diffable.
 // Firing and resolved instances are grouped under their own bold subheading
 // (Slack Block Kit text has no per-line color) instead of an inline marker,
@@ -337,7 +401,7 @@ func alertDetails(alerts []webhook.Alert) string {
 	return strings.Join(sections, "\n\n")
 }
 
-// dedupAnnotations collects description/message annotations from alerts
+// dedupAnnotations collects description/message (or, failing both, summary) annotations from alerts
 // matching status, de-duplicated and sorted.
 func dedupAnnotations(alerts []webhook.Alert, status string) []string {
 	seen := map[string]bool{}
@@ -346,7 +410,11 @@ func dedupAnnotations(alerts []webhook.Alert, status string) []string {
 		if a.Status != status {
 			continue
 		}
-		for _, key := range []string{"description", "message"} {
+		keys := []string{"description", "message"}
+		if a.Annotations["description"] == "" && a.Annotations["message"] == "" {
+			keys = []string{"summary"} // rules with only a summary would otherwise render empty
+		}
+		for _, key := range keys {
 			if v := a.Annotations[key]; v != "" && !seen[v] {
 				seen[v] = true
 				out = append(out, v)
@@ -390,7 +458,7 @@ func silenceURL(grafanaURL string, labels map[string]string) string {
 		return ""
 	}
 	q := url.Values{"alertmanager": {"alert-" + cluster}}
-	for _, key := range []string{"alertname", "cluster", "namespace"} {
+	for _, key := range []string{"alertname", "cluster", "namespace", "workload"} {
 		if v := labels[key]; v != "" {
 			q.Add("matcher", key+"="+v)
 		}

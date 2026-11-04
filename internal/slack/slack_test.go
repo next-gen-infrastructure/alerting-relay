@@ -244,3 +244,32 @@ func TestAlertDetailsGroupsFiringAndResolvedUnderSubheadings(t *testing.T) {
 		t.Fatalf("expected:\n%s\ngot:\n%s", want, got)
 	}
 }
+
+func TestHeadlineWorkloadGroup(t *testing.T) {
+	p := webhook.Payload{
+		Status:       "firing",
+		CommonLabels: map[string]string{"namespace": "osint", "workload": "api"},
+		Alerts: []webhook.Alert{
+			{Status: "firing", Labels: map[string]string{"alertname": "KubePodNotReady", "severity": "warning"}},
+			{Status: "firing", Labels: map[string]string{"alertname": "KubeDeploymentReplicasMismatch", "severity": "critical"}},
+		},
+	}
+	header := BuildAttachment(p, "", nil, false).Blocks.BlockSet[0].(*slackapi.HeaderBlock)
+	if want := "🔴 KubeDeploymentReplicasMismatch +1 more (osint/api)"; header.Text.Text != want {
+		t.Fatalf("got %q, want %q", header.Text.Text, want)
+	}
+}
+
+func TestBuildInhibitedReply(t *testing.T) {
+	att := BuildInhibitedReply(webhook.Alert{Labels: map[string]string{"alertname": "A"}, Annotations: map[string]string{"description": "desc"}})
+	if !strings.Contains(att.Blocks.BlockSet[0].(*slackapi.SectionBlock).Text.Text, "Inhibited") || att.Fallback != "Inhibited: A" {
+		t.Fatalf("unexpected reply: %#v", att)
+	}
+}
+
+func TestAlertDetailsFallsBackToSummary(t *testing.T) {
+	got := alertDetails([]webhook.Alert{{Status: "firing", Annotations: map[string]string{"summary": "OOM on node-1"}}})
+	if !strings.Contains(got, "OOM on node-1") {
+		t.Fatalf("expected summary fallback, got %q", got)
+	}
+}

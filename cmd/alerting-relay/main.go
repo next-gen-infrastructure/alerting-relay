@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"alerting-relay/internal/alertmanager"
 	"alerting-relay/internal/slack"
 	"alerting-relay/internal/store"
 	"alerting-relay/internal/webhook"
@@ -34,13 +35,14 @@ type ClusterChannels struct {
 }
 
 type Config struct {
-	DatabaseURL   string
-	SlackToken    string
-	SlackChannels map[string]ClusterChannels // cluster label -> channels
-	SlackTeams    map[string]string          // team label -> Slack user-group ID, for real pings
-	WebhookToken  string
-	GrafanaURL    string // default Grafana base URL, overridable per cluster
-	Addr          string
+	DatabaseURL     string
+	SlackToken      string
+	SlackChannels   map[string]ClusterChannels // cluster label -> channels
+	SlackTeams      map[string]string          // team label -> Slack user-group ID, for real pings
+	WebhookToken    string
+	AlertmanagerURL string // optional; enables inhibited-alert thread comments
+	GrafanaURL      string // default Grafana base URL, overridable per cluster
+	Addr            string
 }
 
 func loadConfig() Config {
@@ -59,13 +61,14 @@ func loadConfig() Config {
 		}
 	}
 	return Config{
-		DatabaseURL:   os.Getenv("DATABASE_URL"),
-		SlackToken:    os.Getenv("SLACK_BOT_TOKEN"),
-		SlackChannels: channels,
-		SlackTeams:    teams,
-		WebhookToken:  os.Getenv("WEBHOOK_TOKEN"),
-		GrafanaURL:    os.Getenv("GRAFANA_URL"),
-		Addr:          ":8080",
+		DatabaseURL:     os.Getenv("DATABASE_URL"),
+		SlackToken:      os.Getenv("SLACK_BOT_TOKEN"),
+		SlackChannels:   channels,
+		SlackTeams:      teams,
+		WebhookToken:    os.Getenv("WEBHOOK_TOKEN"),
+		GrafanaURL:      os.Getenv("GRAFANA_URL"),
+		AlertmanagerURL: os.Getenv("ALERTMANAGER_URL"),
+		Addr:            ":8080",
 	}
 }
 
@@ -234,6 +237,7 @@ type relay struct {
 	cfg   Config
 	store *store.Store
 	slack *slack.Client
+	am    *alertmanager.Client // nil when ALERTMANAGER_URL is unset
 }
 
 func (rl *relay) handleWebhook(w http.ResponseWriter, r *http.Request) {
@@ -277,13 +281,17 @@ func (rl *relay) handleGroup(payload webhook.Payload) error {
 		if err != nil {
 			return err
 		}
-		return rl.store.Create(store.AlertGroup{
+		if err := rl.store.Create(store.AlertGroup{
 			Receiver:  payload.Receiver,
 			GroupKey:  payload.GroupKey,
 			Channel:   channel,
 			MessageTS: ts,
 			Status:    "firing",
-		})
+		}); err != nil {
+			return err
+		}
+		rl.postInhibited(payload, channel, ts)
+		return nil
 	}
 
 	// Alert set changed since we last posted: keep the root's header current
@@ -295,10 +303,70 @@ func (rl *relay) handleGroup(payload webhook.Payload) error {
 		return err
 	}
 
+	if payload.Status == "firing" {
+		rl.postInhibited(payload, existing.Channel, existing.MessageTS)
+	}
+
 	if payload.Status == "resolved" {
 		return rl.store.MarkResolved(payload.Receiver, payload.GroupKey)
 	}
 	return rl.store.Touch(payload.Receiver, payload.GroupKey)
+}
+
+// postInhibited adds one thread comment per newly-seen inhibited alert in the
+// group's scope. Best-effort: failures are logged, not returned, so a flaky
+// Alertmanager can't make the webhook retry and duplicate the main posts.
+func (rl *relay) postInhibited(payload webhook.Payload, channel, ts string) {
+	if rl.am == nil {
+		return
+	}
+	if err := rl.store.SaveScope(payload.Receiver, payload.GroupKey, payload.CommonLabels); err != nil {
+		slog.Warn("save group scope", "group_key", payload.GroupKey, "err", err)
+	}
+	rl.syncInhibited(payload.Receiver, payload.GroupKey, payload.CommonLabels, channel, ts)
+}
+
+func (rl *relay) syncInhibited(receiver, groupKey string, labels map[string]string, channel, ts string) {
+	alerts, err := rl.am.Inhibited(labels)
+	if err != nil {
+		slog.Warn("fetch inhibited alerts", "group_key", groupKey, "err", err)
+		return
+	}
+	fps := make([]string, len(alerts))
+	byFP := make(map[string]webhook.Alert, len(alerts))
+	for i, a := range alerts {
+		fps[i] = a.Fingerprint
+		byFP[a.Fingerprint] = a
+	}
+	fresh, err := rl.store.MarkInhibitedPosted(receiver, groupKey, fps)
+	if err != nil {
+		slog.Warn("record inhibited alerts", "group_key", groupKey, "err", err)
+	}
+	for _, fp := range fresh {
+		if err := rl.slack.PostThreadReply(channel, ts, slack.BuildInhibitedReply(byFP[fp])); err != nil {
+			slog.Warn("post inhibited reply", "group_key", groupKey, "fingerprint", fp, "err", err)
+		}
+	}
+}
+
+// inhibitedPollInterval is how often firing groups are re-checked for newly inhibited alerts
+// (Alertmanager sends no webhook when only an inhibited alert appears).
+const inhibitedPollInterval = time.Minute
+
+func (rl *relay) startInhibitedLoop() {
+	ticker := time.NewTicker(inhibitedPollInterval)
+	go func() {
+		for range ticker.C {
+			groups, err := rl.store.ListFiring()
+			if err != nil {
+				slog.Error("list firing groups", "err", err)
+				continue
+			}
+			for _, g := range groups {
+				rl.syncInhibited(g.Receiver, g.GroupKey, g.Labels, g.Channel, g.MessageTS)
+			}
+		}
+	}()
 }
 
 func (rl *relay) startCleanupLoop() {
@@ -353,6 +421,10 @@ func main() {
 	}
 
 	rl := &relay{cfg: cfg, store: st, slack: slackClient}
+	if cfg.AlertmanagerURL != "" {
+		rl.am = alertmanager.New(cfg.AlertmanagerURL, os.Getenv("ALERTMANAGER_USERNAME"), os.Getenv("ALERTMANAGER_PASSWORD"))
+		rl.startInhibitedLoop()
+	}
 	rl.startCleanupLoop()
 
 	mux := http.NewServeMux()
