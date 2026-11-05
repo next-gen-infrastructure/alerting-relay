@@ -240,9 +240,13 @@ type relay struct {
 	am    *alertmanager.Client // nil when ALERTMANAGER_URL is unset
 }
 
-func (rl *relay) handleWebhook(w http.ResponseWriter, r *http.Request) {
+func (rl *relay) authorized(r *http.Request) bool {
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if subtle.ConstantTimeCompare([]byte(token), []byte(rl.cfg.WebhookToken)) != 1 {
+	return subtle.ConstantTimeCompare([]byte(token), []byte(rl.cfg.WebhookToken)) == 1
+}
+
+func (rl *relay) handleWebhook(w http.ResponseWriter, r *http.Request) {
+	if !rl.authorized(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -430,6 +434,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/webhook", promhttp.InstrumentHandlerDuration(webhookDuration,
 		promhttp.InstrumentHandlerCounter(webhookRequests, http.HandlerFunc(rl.handleWebhook))))
+	mux.HandleFunc("/argocd", rl.handleArgoCD)
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
