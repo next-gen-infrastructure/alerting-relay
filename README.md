@@ -30,7 +30,28 @@ Set via environment variables:
 | `LOG_FORMAT`     | `text` (default) or `json`                                      |
 | `LOG_LEVEL`      | `debug`, `info` (default), `warn`, or `error`                    |
 
-Listens on `:8080`, exposing `/webhook` (Alertmanager `webhook_configs` target) and `/healthz`.
+Listens on `:8080`, exposing `/webhook` (Alertmanager `webhook_configs` target), `/argocd` (Argo CD notifications target) and `/healthz`.
+
+## Argo CD notifications
+
+`POST /argocd` (same `Authorization: Bearer $WEBHOOK_TOKEN`) keeps one Slack message per `app@revision`: the first event posts the root, each later event edits it and replies in its thread, and `healthy` closes it (a later failure on the same revision starts a new thread). Channel is picked from `SLACK_CHANNELS` by `cluster`: `sync-failed`/`degraded` go to `alerting` (a failure after the revision already posted to `notifications` starts a new thread there), `syncing`/`synced` to `notifications`; `healthy` updates and closes whichever message exists, i.e. marks the failure recovered. Body fields: `app`, `event` (`syncing`, `synced`, `sync-failed`, `degraded`, `healthy`), `revision`, `cluster`, `namespace`, `repo`, `message`, `url`. Example `argocd-notifications-cm`:
+
+```yaml
+service.webhook.relay: |
+  url: http://alerting-relay/argocd
+  headers: [{name: Authorization, value: Bearer $relay-token}, {name: Content-Type, value: application/json}]
+template.relay-base: |
+  webhook:
+    relay:
+      method: POST
+      body: |
+        {"app":"{{.app.metadata.name}}","repo":"{{.app.spec.source.repoURL}}","cluster":"{{.app.spec.destination.name}}",
+         "namespace":"{{.app.spec.destination.namespace}}","revision":"{{.app.status.sync.revision}}",
+         "event":"EVENT","message":"{{.app.status.operationState.message}}",
+         "url":"{{.context.argocdUrl}}/applications/{{.app.metadata.name}}"}
+```
+
+Define one template per event (`EVENT` = `syncing` etc.) and subscribe via triggers `on-sync-running`, `on-sync-succeeded`, `on-sync-failed`, `on-health-degraded`, `on-deployed`/health-healthy.
 
 ## Layout
 

@@ -17,6 +17,10 @@ func main() {
 		os.Exit(1)
 	}
 	client := slack.New(token)
+	if os.Getenv("SMOKETEST") == "argocd" {
+		runArgoCD(client, channel)
+		return
+	}
 	grafanaURL := "https://grafana.example.com"
 
 	base := webhook.Payload{
