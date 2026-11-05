@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.12.0...v0.13.0) (2026-11-05)
+
+
+### Features
+
+* relay Argo CD notifications to Slack ([80503cd](https://github.com/next-gen-infrastructure/alerting-relay/commit/80503cdaa92fe5bf16265be5abbe8e91e72db572))
+* relay Argo CD notifications to Slack ([31126a1](https://github.com/next-gen-infrastructure/alerting-relay/commit/31126a1020af7c6224c120eafe76ca07ee668f9b))
+
 ## [0.12.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.11.0...v0.12.0) (2026-11-04)
 
 
