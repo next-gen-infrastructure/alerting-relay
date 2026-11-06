@@ -99,8 +99,8 @@ func newLogger() *slog.Logger {
 }
 
 // highSeverity is the set of severity values routed to the "alerting" channel;
-// anything else (warning, info, unset) goes to "notifications".
-var highSeverity = map[string]bool{"critical": true, "high": true}
+// anything else (info, unset) goes to "notifications".
+var highSeverity = map[string]bool{"critical": true, "high": true, "warning": true}
 
 // resolveChannel picks the destination Slack channel from the alert's own
 // cluster/severity labels — the relay is the single place this mapping lives,
@@ -247,12 +247,14 @@ func (rl *relay) authorized(r *http.Request) bool {
 
 func (rl *relay) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	if !rl.authorized(r) {
+		slog.Warn("webhook unauthorized", "remote", r.RemoteAddr)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	var payload webhook.Payload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		slog.Warn("webhook bad request", "method", r.Method, "decode_err", err, "remote", r.RemoteAddr)
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
@@ -262,6 +264,7 @@ func (rl *relay) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	slog.Info("webhook handled", "receiver", payload.Receiver, "group_key", payload.GroupKey, "status", payload.Status, "alerts", len(payload.Alerts))
 	w.WriteHeader(http.StatusOK)
 }
 
