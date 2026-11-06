@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.1](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.15.0...v0.15.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **argocd:** batch Slack updates and cap message size ([454674f](https://github.com/next-gen-infrastructure/alerting-relay/commit/454674f54613f1de031f296beccf90b7df077ac9))
+* **argocd:** batch Slack updates and cap message size ([d9ebd74](https://github.com/next-gen-infrastructure/alerting-relay/commit/d9ebd74d1ff6cb223227aa5000bc7019b4b0b7ec))
+
 ## [0.15.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.14.0...v0.15.0) (2026-11-06)
 
 
