@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.13.0...v0.14.0) (2026-11-06)
+
+
+### Features
+
+* **argocd:** aggregate app statuses per revision ([2c51f29](https://github.com/next-gen-infrastructure/alerting-relay/commit/2c51f2952857193162d2c9ca4fdaa59519e7d61a))
+* **argocd:** aggregate app statuses per revision ([10d782b](https://github.com/next-gen-infrastructure/alerting-relay/commit/10d782b7ff93df9cfc104571f11bfd7a2304ad97))
+
 ## [0.13.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.12.0...v0.13.0) (2026-11-05)
 
 
