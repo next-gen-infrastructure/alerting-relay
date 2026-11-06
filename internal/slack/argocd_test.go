@@ -79,3 +79,17 @@ func TestArgoTextCapped(t *testing.T) {
 		}
 	}
 }
+
+func TestArgoProgressingAndSuperseded(t *testing.T) {
+	if !ValidArgoEvent("progressing") || WorstArgoEvent(map[string]webhook.ArgoEvent{"a": {Event: "synced"}, "b": {Event: "progressing"}}) != "progressing" {
+		t.Fatal("progressing")
+	}
+	one := BuildArgoSummary(webhook.ArgoEvent{}, map[string]webhook.ArgoEvent{"a": {App: "a", Event: "synced"}}).Blocks.BlockSet[0].(*slackapi.SectionBlock).Text.Text
+	if !strings.Contains(one, "(1 app)") {
+		t.Fatal(one)
+	}
+	a := BuildArgoSuperseded(webhook.ArgoEvent{App: "web", Revision: "aaaaaaaa"}, "bbbbbbbb")
+	if txt := a.Blocks.BlockSet[0].(*slackapi.SectionBlock).Text.Text; !strings.Contains(txt, "bbbbbbb") || !strings.Contains(txt, "web") {
+		t.Fatal(txt)
+	}
+}

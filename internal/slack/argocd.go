@@ -13,6 +13,7 @@ import (
 
 var argoStates = map[string]struct{ emoji, title, color string }{
 	"syncing":     {":arrows_counterclockwise:", "Syncing", defaultColor},
+	"progressing": {":hourglass_flowing_sand:", "Progressing", defaultColor},
 	"synced":      {":white_check_mark:", "Synced", resolvedColor},
 	"sync-failed": {":x:", "Sync failed", severityColors["critical"]},
 	"degraded":    {":rotating_light:", "Degraded", severityColors["critical"]},
@@ -23,7 +24,7 @@ var argoStates = map[string]struct{ emoji, title, color string }{
 func ValidArgoEvent(e string) bool { _, ok := argoStates[e]; return ok }
 
 // argoRank orders events by severity for per-revision aggregation.
-var argoRank = map[string]int{"healthy": 0, "synced": 1, "syncing": 2, "degraded": 3, "sync-failed": 4}
+var argoRank = map[string]int{"healthy": 0, "synced": 1, "progressing": 2, "syncing": 3, "degraded": 4, "sync-failed": 5}
 
 // WorstArgoEvent returns the most severe event across apps ("" if empty).
 func WorstArgoEvent(apps map[string]webhook.ArgoEvent) string {
@@ -65,7 +66,7 @@ func BuildArgoSummary(ev webhook.ArgoEvent, apps map[string]webhook.ArgoEvent) s
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	lines := []string{fmt.Sprintf("%s *%s* — %s (%d apps)", st.emoji, st.title, revLink(ev.Repo, ev.Revision), len(apps))}
+	lines := []string{fmt.Sprintf("%s *%s* — %s (%s)", st.emoji, st.title, revLink(ev.Repo, ev.Revision), plural(len(apps), "app"))}
 	for i, n := range names {
 		if i == maxArgoApps {
 			lines = append(lines, fmt.Sprintf("… and %d more", len(names)-i))
@@ -105,11 +106,29 @@ func revLink(repo, rev string) string {
 	return "`" + shortRev(rev) + "`"
 }
 
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
+}
+
 func shortRev(r string) string {
 	if len(r) > 7 {
 		return r[:7]
 	}
 	return r
+}
+
+// BuildArgoSuperseded renders the root of a group whose last app moved on to a newer revision.
+func BuildArgoSuperseded(old webhook.ArgoEvent, byRev string) slackapi.Attachment {
+	head := fmt.Sprintf(":fast_forward: *Superseded* — `%s` @ %s by %s", old.App, revLink(old.Repo, old.Revision), revLink(old.Repo, byRev))
+	return slackapi.Attachment{
+		Color:    defaultColor,
+		Fallback: fmt.Sprintf("Superseded: %s @ %s", old.App, shortRev(old.Revision)),
+		Blocks: slackapi.Blocks{BlockSet: []slackapi.Block{slackapi.NewSectionBlock(
+			slackapi.NewTextBlockObject(slackapi.MarkdownType, head, false, false), nil, nil)}},
+	}
 }
 
 const maxArgoMessage = 500 // chars of an event message shown in a thread reply

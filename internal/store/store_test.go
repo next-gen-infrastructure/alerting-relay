@@ -76,3 +76,23 @@ func TestFiringScopesAndInhibitedDedup(t *testing.T) {
 		t.Fatalf("resolved group must not be polled, got %#v", got)
 	}
 }
+
+func TestFiringGroupsWithApp(t *testing.T) {
+	s, err := New("sqlite://:memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"old", "new", "done"} {
+		_ = s.Create(AlertGroup{Receiver: "r", GroupKey: k, Channel: "c", MessageTS: k, Status: "firing"})
+		_ = s.SetAppState("r", k, "web", k)
+	}
+	_ = s.MarkResolved("r", "done")
+	gs, err := s.FiringGroupsWithApp("r", "web", "new")
+	if err != nil || len(gs) != 1 || gs[0].GroupKey != "old" || gs[0].State != "old" {
+		t.Fatalf("got %+v, %v", gs, err)
+	}
+	_ = s.DeleteAppState("r", "old", "web")
+	if gs, _ = s.FiringGroupsWithApp("r", "web", "new"); len(gs) != 0 {
+		t.Fatalf("still %+v", gs)
+	}
+}

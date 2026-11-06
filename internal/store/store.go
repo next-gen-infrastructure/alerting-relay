@@ -179,6 +179,40 @@ func (s *Store) AppStates(receiver, groupKey string) (map[string]string, error) 
 	return out, rows.Err()
 }
 
+// AppGroup is a firing group holding a given app, with that app's stored state.
+type AppGroup struct {
+	AlertGroup
+	State string
+}
+
+// FiringGroupsWithApp returns the firing groups (other than exceptKey) that hold app.
+func (s *Store) FiringGroupsWithApp(receiver, app, exceptKey string) ([]AppGroup, error) {
+	rows, err := s.db.Query(
+		`SELECT g.group_key, g.channel, g.message_ts, a.state
+		 FROM alert_groups g JOIN argo_apps a ON a.receiver = g.receiver AND a.group_key = g.group_key
+		 WHERE g.receiver = $1 AND g.status = 'firing' AND a.app = $2 AND g.group_key <> $3`,
+		receiver, app, exceptKey)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []AppGroup
+	for rows.Next() {
+		ag := AppGroup{AlertGroup: AlertGroup{Receiver: receiver, Status: "firing"}}
+		if err := rows.Scan(&ag.GroupKey, &ag.Channel, &ag.MessageTS, &ag.State); err != nil {
+			return nil, err
+		}
+		out = append(out, ag)
+	}
+	return out, rows.Err()
+}
+
+// DeleteAppState removes one app from a group.
+func (s *Store) DeleteAppState(receiver, groupKey, app string) error {
+	_, err := s.db.Exec(`DELETE FROM argo_apps WHERE receiver = $1 AND group_key = $2 AND app = $3`, receiver, groupKey, app)
+	return err
+}
+
 // ClearAppStates forgets a group's app states, so a fresh occurrence starts empty.
 func (s *Store) ClearAppStates(receiver, groupKey string) error {
 	_, err := s.db.Exec(`DELETE FROM argo_apps WHERE receiver = $1 AND group_key = $2`, receiver, groupKey)

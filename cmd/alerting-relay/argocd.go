@@ -112,7 +112,7 @@ func latestPerApp(evs []webhook.ArgoEvent) []webhook.ArgoEvent {
 	return out
 }
 
-func (rl *relay) flushArgoGroup(key string, evs []webhook.ArgoEvent) error {
+func (rl *relay) updateArgoGroup(key string, evs []webhook.ArgoEvent) error {
 	latest := evs[len(evs)-1]
 	existing, err := rl.store.Get(argoReceiver, key)
 	if err != nil {
@@ -177,6 +177,71 @@ func (rl *relay) flushArgoGroup(key string, evs []webhook.ArgoEvent) error {
 		return rl.store.MarkResolved(argoReceiver, key)
 	}
 	return rl.store.Touch(argoReceiver, key)
+}
+
+func (rl *relay) flushArgoGroup(key string, evs []webhook.ArgoEvent) error {
+	if err := rl.updateArgoGroup(key, evs); err != nil {
+		return err
+	}
+	return rl.supersedeArgo(key, latestPerApp(evs))
+}
+
+// supersedeArgo drops each app that has started or finished a sync on a new
+// revision from its older open groups on the same cluster, so those messages
+// don't stay on "Syncing" forever. A group left with no apps is closed.
+func (rl *relay) supersedeArgo(key string, evs []webhook.ArgoEvent) error {
+	for _, ev := range evs {
+		if ev.Event != "syncing" && ev.Event != "synced" {
+			continue // only events that mean "this app is now on a new revision"
+		}
+		olds, err := rl.store.FiringGroupsWithApp(argoReceiver, ev.App, key)
+		if err != nil {
+			return err
+		}
+		for _, g := range olds {
+			var old webhook.ArgoEvent
+			if json.Unmarshal([]byte(g.State), &old) != nil || old.Cluster != ev.Cluster || old.Revision == ev.Revision {
+				continue
+			}
+			if err := rl.supersedeArgoGroup(g, old, ev.Revision); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (rl *relay) supersedeArgoGroup(g store.AppGroup, old webhook.ArgoEvent, byRev string) error {
+	raw, err := rl.store.AppStates(argoReceiver, g.GroupKey)
+	if err != nil {
+		return err
+	}
+	delete(raw, old.App)
+	var rest map[string]webhook.ArgoEvent
+	var rep webhook.ArgoEvent
+	for app, s := range raw {
+		var a webhook.ArgoEvent
+		if json.Unmarshal([]byte(s), &a) != nil {
+			continue
+		}
+		if rest == nil {
+			rest = map[string]webhook.ArgoEvent{}
+		}
+		rest[app], rep = a, a
+	}
+	if len(rest) == 0 {
+		if err := rl.slack.UpdateRoot(g.Channel, g.MessageTS, slack.BuildArgoSuperseded(old, byRev)); err != nil {
+			return err
+		}
+		if err := rl.store.DeleteAppState(argoReceiver, g.GroupKey, old.App); err != nil {
+			return err
+		}
+		return rl.store.MarkResolved(argoReceiver, g.GroupKey)
+	}
+	if err := rl.slack.UpdateRoot(g.Channel, g.MessageTS, slack.BuildArgoSummary(rep, rest)); err != nil {
+		return err
+	}
+	return rl.store.DeleteAppState(argoReceiver, g.GroupKey, old.App)
 }
 
 func (rl *relay) inChannel(ag *store.AlertGroup, labels map[string]string) bool {
