@@ -86,6 +86,16 @@ CREATE TABLE IF NOT EXISTS group_scopes (
 )`); err != nil {
 		return err
 	}
+	if _, err = s.db.Exec(`
+CREATE TABLE IF NOT EXISTS argo_apps (
+	receiver  TEXT NOT NULL,
+	group_key TEXT NOT NULL,
+	app       TEXT NOT NULL,
+	state     TEXT NOT NULL,
+	PRIMARY KEY (receiver, group_key, app)
+)`); err != nil {
+		return err
+	}
 	_, err = s.db.Exec(`
 CREATE TABLE IF NOT EXISTS inhibited_posted (
 	receiver    TEXT NOT NULL,
@@ -140,6 +150,39 @@ func (s *Store) ListFiring() ([]FiringGroup, error) {
 		out = append(out, fg)
 	}
 	return out, rows.Err()
+}
+
+// SetAppState stores the latest opaque state of one app within a group (Argo CD revision aggregation).
+func (s *Store) SetAppState(receiver, groupKey, app, state string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO argo_apps (receiver, group_key, app, state) VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (receiver, group_key, app) DO UPDATE SET state = EXCLUDED.state`,
+		receiver, groupKey, app, state)
+	return err
+}
+
+// AppStates returns app -> state for a group.
+func (s *Store) AppStates(receiver, groupKey string) (map[string]string, error) {
+	rows, err := s.db.Query(`SELECT app, state FROM argo_apps WHERE receiver = $1 AND group_key = $2`, receiver, groupKey)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]string{}
+	for rows.Next() {
+		var app, state string
+		if err := rows.Scan(&app, &state); err != nil {
+			return nil, err
+		}
+		out[app] = state
+	}
+	return out, rows.Err()
+}
+
+// ClearAppStates forgets a group's app states, so a fresh occurrence starts empty.
+func (s *Store) ClearAppStates(receiver, groupKey string) error {
+	_, err := s.db.Exec(`DELETE FROM argo_apps WHERE receiver = $1 AND group_key = $2`, receiver, groupKey)
+	return err
 }
 
 // MarkInhibitedPosted records fingerprints already posted to the group's
@@ -234,7 +277,7 @@ func (s *Store) DeleteResolvedOlderThan(age time.Duration) (int64, error) {
 		cutoff = "datetime('now', $1)"
 		threshold = fmt.Sprintf("-%d seconds", seconds)
 	}
-	for _, table := range [...]string{"inhibited_posted", "group_scopes"} {
+	for _, table := range [...]string{"inhibited_posted", "group_scopes", "argo_apps"} {
 		if _, err := s.db.Exec(
 			`DELETE FROM `+table+` WHERE NOT EXISTS (
 				SELECT 1 FROM alert_groups g WHERE g.receiver = `+table+`.receiver AND g.group_key = `+table+`.group_key
