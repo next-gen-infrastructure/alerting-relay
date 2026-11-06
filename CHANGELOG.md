@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.2](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.15.1...v0.15.2) (2026-11-06)
+
+
+### Bug Fixes
+
+* **argocd:** more argocd statuses support ([e8b02de](https://github.com/next-gen-infrastructure/alerting-relay/commit/e8b02dee284d92e1ac36071aa0b03482c9bf31e3))
+
 ## [0.15.1](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.15.0...v0.15.1) (2026-11-06)
 
 
