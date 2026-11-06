@@ -20,11 +20,14 @@ import (
 // revision opens a fresh thread.
 func (rl *relay) handleArgoCD(w http.ResponseWriter, r *http.Request) {
 	if !rl.authorized(r) {
+		slog.Warn("argocd unauthorized", "remote", r.RemoteAddr)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	var ev webhook.ArgoEvent
-	if err := json.NewDecoder(r.Body).Decode(&ev); err != nil || ev.App == "" || !slack.ValidArgoEvent(ev.Event) {
+	err := json.NewDecoder(r.Body).Decode(&ev)
+	if err != nil || ev.App == "" || !slack.ValidArgoEvent(ev.Event) {
+		slog.Warn("argocd bad request", "method", r.Method, "app", ev.App, "event", ev.Event, "decode_err", err, "remote", r.RemoteAddr)
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
@@ -33,6 +36,7 @@ func (rl *relay) handleArgoCD(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	slog.Info("argocd event handled", "app", ev.App, "event", ev.Event, "revision", ev.Revision, "cluster", ev.Cluster)
 	w.WriteHeader(http.StatusOK)
 }
 

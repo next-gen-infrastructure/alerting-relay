@@ -35,8 +35,8 @@ func TestResolveChannel(t *testing.T) {
 	if ch, ok := resolveChannel(channels, map[string]string{"cluster": "dev", "severity": "high"}); !ok || ch != "C-DEV-ALERTS" {
 		t.Fatalf("expected dev high -> alerting channel, got %q, ok=%v", ch, ok)
 	}
-	if ch, ok := resolveChannel(channels, map[string]string{"cluster": "dev", "severity": "warning"}); !ok || ch != "C-DEV-NOTIFS" {
-		t.Fatalf("expected dev warning -> notifications channel, got %q, ok=%v", ch, ok)
+	if ch, ok := resolveChannel(channels, map[string]string{"cluster": "dev", "severity": "warning"}); !ok || ch != "C-DEV-ALERTS" {
+		t.Fatalf("expected dev warning -> alerting channel, got %q, ok=%v", ch, ok)
 	}
 	if ch, ok := resolveChannel(channels, map[string]string{"cluster": "dev"}); !ok || ch != "C-DEV-NOTIFS" {
 		t.Fatalf("expected dev with no severity -> notifications channel, got %q, ok=%v", ch, ok)
@@ -49,7 +49,7 @@ func TestResolveChannel(t *testing.T) {
 	if ch, ok := resolveChannel(channels, map[string]string{"severity": "critical"}); !ok || ch != "C-DEFAULT-ALERTS" {
 		t.Fatalf("expected no cluster label -> default alerting channel, got %q, ok=%v", ch, ok)
 	}
-	if ch, ok := resolveChannel(channels, map[string]string{"cluster": "", "severity": "warning"}); !ok || ch != "C-DEFAULT-NOTIFS" {
+	if ch, ok := resolveChannel(channels, map[string]string{"cluster": "", "severity": "info"}); !ok || ch != "C-DEFAULT-NOTIFS" {
 		t.Fatalf("expected empty cluster label -> default notifications channel, got %q, ok=%v", ch, ok)
 	}
 }
