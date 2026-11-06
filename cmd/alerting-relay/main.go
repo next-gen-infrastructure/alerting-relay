@@ -14,6 +14,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -238,6 +239,9 @@ type relay struct {
 	store *store.Store
 	slack *slack.Client
 	am    *alertmanager.Client // nil when ALERTMANAGER_URL is unset
+
+	argoMu      sync.Mutex
+	argoPending map[string][]webhook.ArgoEvent // Argo CD events awaiting the next flush, by group key
 }
 
 func (rl *relay) authorized(r *http.Request) bool {
@@ -433,6 +437,7 @@ func main() {
 		rl.startInhibitedLoop()
 	}
 	rl.startCleanupLoop()
+	rl.startArgoFlushLoop()
 
 	mux := http.NewServeMux()
 	mux.Handle("/webhook", promhttp.InstrumentHandlerDuration(webhookDuration,

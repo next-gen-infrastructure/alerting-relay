@@ -36,7 +36,24 @@ func WorstArgoEvent(apps map[string]webhook.ArgoEvent) string {
 	return worst
 }
 
-const maxArgoAppLines = 30 // keeps the section under Slack's 3000-char text limit
+// Slack rejects a section whose text exceeds 3000 chars with invalid_attachments.
+// Byte length over-counts chars, which only makes the cap safer.
+const maxSectionText = 2900
+
+const maxArgoApps = 10 // apps listed in the root summary; the rest are counted
+
+// joinCapped joins lines, always keeping the first, and replaces whatever
+// doesn't fit under maxSectionText with "… and N more".
+func joinCapped(lines []string) string {
+	text := lines[0]
+	for i := 1; i < len(lines); i++ {
+		if len(text)+1+len(lines[i]) > maxSectionText-20 {
+			return text + fmt.Sprintf("\n… and %d more", len(lines)-i)
+		}
+		text += "\n" + lines[i]
+	}
+	return text
+}
 
 // BuildArgoSummary renders the per-revision root message: the worst status as
 // header colour/title, one line per app with its latest status. ev is the
@@ -48,9 +65,9 @@ func BuildArgoSummary(ev webhook.ArgoEvent, apps map[string]webhook.ArgoEvent) s
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	var lines []string
+	lines := []string{fmt.Sprintf("%s *%s* — %s (%d apps)", st.emoji, st.title, revLink(ev.Repo, ev.Revision), len(apps))}
 	for i, n := range names {
-		if i == maxArgoAppLines {
+		if i == maxArgoApps {
 			lines = append(lines, fmt.Sprintf("… and %d more", len(names)-i))
 			break
 		}
@@ -65,7 +82,7 @@ func BuildArgoSummary(ev webhook.ArgoEvent, apps map[string]webhook.ArgoEvent) s
 		}
 		lines = append(lines, line)
 	}
-	head := fmt.Sprintf("%s *%s* — %s (%d apps)\n%s", st.emoji, st.title, revLink(ev.Repo, ev.Revision), len(apps), strings.Join(lines, "\n"))
+	head := joinCapped(lines)
 	blocks := []slackapi.Block{slackapi.NewSectionBlock(
 		slackapi.NewTextBlockObject(slackapi.MarkdownType, head, false, false), nil, nil)}
 	if ev.Repo != "" {
@@ -95,23 +112,38 @@ func shortRev(r string) string {
 	return r
 }
 
-// BuildArgoAttachment renders a single Argo CD event as a compact thread reply;
-// namespace and repo live in the root summary (BuildArgoSummary).
-func BuildArgoAttachment(ev webhook.ArgoEvent, withMessage bool) slackapi.Attachment {
-	st := argoStates[ev.Event]
-	ref := ev.App + "@" + shortRev(ev.Revision)
-	if ev.URL != "" {
-		ref = fmt.Sprintf("<%s|%s>", ev.URL, ref)
+const maxArgoMessage = 500 // chars of an event message shown in a thread reply
+
+// BuildArgoAttachment renders the events accumulated for a group since the last
+// flush as one compact thread reply (colour = worst event); namespace and repo
+// live in the root summary (BuildArgoSummary).
+func BuildArgoAttachment(evs []webhook.ArgoEvent) slackapi.Attachment {
+	worst := evs[0]
+	lines := make([]string, 0, len(evs))
+	for _, ev := range evs {
+		if argoRank[ev.Event] > argoRank[worst.Event] {
+			worst = ev
+		}
+		st := argoStates[ev.Event]
+		ref := ev.App + "@" + shortRev(ev.Revision)
+		if ev.URL != "" {
+			ref = fmt.Sprintf("<%s|%s>", ev.URL, ref)
+		}
+		line := fmt.Sprintf("%s *%s* — %s", st.emoji, st.title, ref)
+		if m := []rune(ev.Message); len(m) > maxArgoMessage {
+			ev.Message = string(m[:maxArgoMessage]) + "…"
+		}
+		if ev.Message != "" {
+			line += "\n" + ev.Message
+		}
+		lines = append(lines, line)
 	}
-	head := fmt.Sprintf("%s *%s* — %s", st.emoji, st.title, ref)
-	if withMessage && ev.Message != "" {
-		head += "\n" + ev.Message
-	}
+	st := argoStates[worst.Event]
 	blocks := []slackapi.Block{slackapi.NewSectionBlock(
-		slackapi.NewTextBlockObject(slackapi.MarkdownType, head, false, false), nil, nil)}
+		slackapi.NewTextBlockObject(slackapi.MarkdownType, joinCapped(lines), false, false), nil, nil)}
 	return slackapi.Attachment{
 		Color:    st.color,
-		Fallback: fmt.Sprintf("%s: %s", st.title, ev.App),
+		Fallback: fmt.Sprintf("%s: %s", st.title, worst.App),
 		Blocks:   slackapi.Blocks{BlockSet: blocks},
 	}
 }

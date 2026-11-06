@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"alerting-relay/internal/slack"
 	"alerting-relay/internal/store"
@@ -17,7 +18,8 @@ import (
 // status wins) and reply in its thread. If any app is sync-failed/degraded the
 // message lives in the cluster's alerting channel, otherwise notifications.
 // The group closes once every app is "healthy"; a later event on the same
-// revision opens a fresh thread.
+// revision opens a fresh thread. Events are queued and flushed to Slack every
+// argoFlushInterval, one root update and one combined reply per group.
 func (rl *relay) handleArgoCD(w http.ResponseWriter, r *http.Request) {
 	if !rl.authorized(r) {
 		slog.Warn("argocd unauthorized", "remote", r.RemoteAddr)
@@ -36,37 +38,102 @@ func (rl *relay) handleArgoCD(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	slog.Info("argocd event handled", "app", ev.App, "event", ev.Event, "revision", ev.Revision, "cluster", ev.Cluster)
+	slog.Info("argocd event queued", "app", ev.App, "event", ev.Event, "revision", ev.Revision, "cluster", ev.Cluster)
 	w.WriteHeader(http.StatusOK)
 }
 
-func (rl *relay) handleArgoEvent(ev webhook.ArgoEvent) error {
-	const receiver = "argocd"
-	key := ev.Revision
-	if ev.Cluster != "" {
-		key = ev.Cluster + "@" + key
+const argoReceiver = "argocd"
+
+// argoFlushInterval is how long Argo CD events are accumulated before Slack is
+// updated, so a burst of events costs one root update and one reply per group.
+const argoFlushInterval = 5 * time.Second
+
+func argoKey(ev webhook.ArgoEvent) string {
+	if ev.Cluster == "" {
+		return ev.Revision
 	}
-	existing, err := rl.store.Get(receiver, key)
+	return ev.Cluster + "@" + ev.Revision
+}
+
+// handleArgoEvent queues the event for the next flush.
+// ponytail: queue is in memory, so events from the last <=5s are lost on restart; persist if that matters.
+func (rl *relay) handleArgoEvent(ev webhook.ArgoEvent) error {
+	key := argoKey(ev)
+	existing, err := rl.store.Get(argoReceiver, key)
 	if err != nil {
 		return err
 	}
-
-	if ev.Event == "healthy" && (existing == nil || existing.Status == "resolved") {
+	rl.argoMu.Lock()
+	defer rl.argoMu.Unlock()
+	if ev.Event == "healthy" && (existing == nil || existing.Status == "resolved") && len(rl.argoPending[key]) == 0 {
 		return nil // nothing to recover
 	}
+	if rl.argoPending == nil {
+		rl.argoPending = map[string][]webhook.ArgoEvent{}
+	}
+	rl.argoPending[key] = append(rl.argoPending[key], ev)
+	return nil
+}
+
+func (rl *relay) startArgoFlushLoop() {
+	ticker := time.NewTicker(argoFlushInterval)
+	go func() {
+		for range ticker.C {
+			rl.flushArgo()
+		}
+	}()
+}
+
+// flushArgo drains the queue, updating Slack once per group.
+func (rl *relay) flushArgo() {
+	rl.argoMu.Lock()
+	batches := rl.argoPending
+	rl.argoPending = nil
+	rl.argoMu.Unlock()
+	for key, evs := range batches {
+		if err := rl.flushArgoGroup(key, evs); err != nil {
+			slog.Error("flush argocd group", "key", key, "events", len(evs), "err", err)
+		}
+	}
+}
+
+// latestPerApp keeps each app's last event, in order of first appearance.
+func latestPerApp(evs []webhook.ArgoEvent) []webhook.ArgoEvent {
+	idx := map[string]int{}
+	var out []webhook.ArgoEvent
+	for _, ev := range evs {
+		if i, ok := idx[ev.App]; ok {
+			out[i] = ev
+		} else {
+			idx[ev.App] = len(out)
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
+func (rl *relay) flushArgoGroup(key string, evs []webhook.ArgoEvent) error {
+	latest := evs[len(evs)-1]
+	existing, err := rl.store.Get(argoReceiver, key)
+	if err != nil {
+		return err
+	}
 	if existing != nil && existing.Status == "resolved" {
-		if err := rl.store.ClearAppStates(receiver, key); err != nil {
+		if err := rl.store.ClearAppStates(argoReceiver, key); err != nil {
 			return err
 		}
 	}
-	b, err := json.Marshal(ev)
-	if err != nil {
-		return err
+	evs = latestPerApp(evs)
+	for _, ev := range evs {
+		b, err := json.Marshal(ev)
+		if err != nil {
+			return err
+		}
+		if err := rl.store.SetAppState(argoReceiver, key, ev.App, string(b)); err != nil {
+			return err
+		}
 	}
-	if err := rl.store.SetAppState(receiver, key, ev.App, string(b)); err != nil {
-		return err
-	}
-	raw, err := rl.store.AppStates(receiver, key)
+	raw, err := rl.store.AppStates(argoReceiver, key)
 	if err != nil {
 		return err
 	}
@@ -83,7 +150,7 @@ func (rl *relay) handleArgoEvent(ev webhook.ArgoEvent) error {
 	// cluster's alerting channel, otherwise notifications. A failure on a
 	// revision whose thread lives in notifications (e.g. it already synced)
 	// starts a new thread in alerting.
-	labels := map[string]string{"cluster": ev.Cluster}
+	labels := map[string]string{"cluster": latest.Cluster}
 	bad := worst == "sync-failed" || worst == "degraded"
 	if bad {
 		labels["severity"] = "critical"
@@ -91,25 +158,25 @@ func (rl *relay) handleArgoEvent(ev webhook.ArgoEvent) error {
 	if existing == nil || existing.Status == "resolved" || (bad && !rl.inChannel(existing, labels)) {
 		channel, ok := resolveChannel(rl.cfg.SlackChannels, labels)
 		if !ok {
-			return fmt.Errorf("no slack channel configured for cluster %q", ev.Cluster)
+			return fmt.Errorf("no slack channel configured for cluster %q", latest.Cluster)
 		}
-		ts, err := rl.slack.PostRoot(channel, slack.BuildArgoSummary(ev, apps))
+		ts, err := rl.slack.PostRoot(channel, slack.BuildArgoSummary(latest, apps))
 		if err != nil {
 			return err
 		}
-		return rl.store.Create(store.AlertGroup{Receiver: receiver, GroupKey: key, Channel: channel, MessageTS: ts, Status: "firing"})
+		return rl.store.Create(store.AlertGroup{Receiver: argoReceiver, GroupKey: key, Channel: channel, MessageTS: ts, Status: "firing"})
 	}
 
-	if err := rl.slack.UpdateRoot(existing.Channel, existing.MessageTS, slack.BuildArgoSummary(ev, apps)); err != nil {
+	if err := rl.slack.UpdateRoot(existing.Channel, existing.MessageTS, slack.BuildArgoSummary(latest, apps)); err != nil {
 		return err
 	}
-	if err := rl.slack.PostThreadReply(existing.Channel, existing.MessageTS, slack.BuildArgoAttachment(ev, true)); err != nil {
+	if err := rl.slack.PostThreadReply(existing.Channel, existing.MessageTS, slack.BuildArgoAttachment(evs)); err != nil {
 		return err
 	}
 	if worst == "healthy" { // every app on the revision is healthy
-		return rl.store.MarkResolved(receiver, key)
+		return rl.store.MarkResolved(argoReceiver, key)
 	}
-	return rl.store.Touch(receiver, key)
+	return rl.store.Touch(argoReceiver, key)
 }
 
 func (rl *relay) inChannel(ag *store.AlertGroup, labels map[string]string) bool {

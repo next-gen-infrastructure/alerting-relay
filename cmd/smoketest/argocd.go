@@ -34,7 +34,7 @@ func runArgoCD(client *slack.Client, channel string) {
 		if i == 0 {
 			ts, err = client.PostRoot(channel, slack.BuildArgoSummary(ev, apps))
 		} else if err = client.UpdateRoot(channel, ts, slack.BuildArgoSummary(ev, apps)); err == nil {
-			err = client.PostThreadReply(channel, ts, slack.BuildArgoAttachment(ev, true))
+			err = client.PostThreadReply(channel, ts, slack.BuildArgoAttachment([]webhook.ArgoEvent{ev}))
 		}
 		if err != nil {
 			fmt.Println("argocd step", s.app, s.event, "error:", err)
