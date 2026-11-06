@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.14.0...v0.15.0) (2026-11-06)
+
+
+### Features
+
+* route warning alerts to alerting channel and log webhook requests ([13f2b8f](https://github.com/next-gen-infrastructure/alerting-relay/commit/13f2b8fe970748989e70fe3447301120c29f5e07))
+* route warning alerts to alerting channel and log webhook requests ([3c583b9](https://github.com/next-gen-infrastructure/alerting-relay/commit/3c583b985dda02bf60eba0e05656f27d5b49e94a))
+
 ## [0.14.0](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.13.0...v0.14.0) (2026-11-06)
 
 
