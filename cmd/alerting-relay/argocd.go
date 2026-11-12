@@ -15,8 +15,8 @@ import (
 // handleArgoCD tracks one Slack message per cluster+revision: the first event
 // posts the root, later events (syncing/synced/sync-failed/degraded/healthy)
 // from any app on that revision update the root's per-app status list (worst
-// status wins) and reply in its thread. If any app is sync-failed/degraded the
-// message lives in the cluster's alerting channel, otherwise notifications.
+// status wins) and reply in its thread. Everything goes to the cluster's
+// notifications channel.
 // The group closes once every app is "healthy"; a later event on the same
 // revision opens a fresh thread. Events are queued and flushed to Slack every
 // argoFlushInterval, one root update and one combined reply per group.
@@ -146,17 +146,10 @@ func (rl *relay) updateArgoGroup(key string, evs []webhook.ArgoEvent) error {
 	}
 	worst := slack.WorstArgoEvent(apps)
 
-	// If any app on the revision failed/degraded, the message belongs in the
-	// cluster's alerting channel, otherwise notifications. A failure on a
-	// revision whose thread lives in notifications (e.g. it already synced)
-	// starts a new thread in alerting.
-	labels := map[string]string{"cluster": latest.Cluster}
-	bad := worst == "sync-failed" || worst == "degraded"
-	if bad {
-		labels["severity"] = "critical"
-	}
-	if existing == nil || existing.Status == "resolved" || (bad && !rl.inChannel(existing, labels)) {
-		channel, ok := resolveChannel(rl.cfg.SlackChannels, labels)
+	if existing == nil || existing.Status == "resolved" {
+		// Argo CD events always go to the cluster's notifications channel;
+		// the alerting channel is reserved for Alertmanager.
+		channel, ok := resolveChannel(rl.cfg.SlackChannels, map[string]string{"cluster": latest.Cluster})
 		if !ok {
 			return fmt.Errorf("no slack channel configured for cluster %q", latest.Cluster)
 		}
@@ -242,9 +235,4 @@ func (rl *relay) supersedeArgoGroup(g store.AppGroup, old webhook.ArgoEvent, byR
 		return err
 	}
 	return rl.store.DeleteAppState(argoReceiver, g.GroupKey, old.App)
-}
-
-func (rl *relay) inChannel(ag *store.AlertGroup, labels map[string]string) bool {
-	ch, _ := resolveChannel(rl.cfg.SlackChannels, labels)
-	return ag.Channel == ch
 }
