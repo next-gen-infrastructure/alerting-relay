@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.3](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.15.2...v0.15.3) (2026-11-12)
+
+
+### Bug Fixes
+
+* **argocd:** send all Argo CD events to the notifications channel ([c6dfe7a](https://github.com/next-gen-infrastructure/alerting-relay/commit/c6dfe7a64b66799cfda6738d3843e51ed7aa1aa0))
+* **argocd:** send all Argo CD events to the notifications channel ([4072024](https://github.com/next-gen-infrastructure/alerting-relay/commit/40720241230683a566b1b7bcad06b23d5bbf97af))
+
 ## [0.15.2](https://github.com/next-gen-infrastructure/alerting-relay/compare/v0.15.1...v0.15.2) (2026-11-06)
 
 
